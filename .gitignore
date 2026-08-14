@@ -9,3 +9,4 @@ release/
 # Embedded runtimes are fetched by scripts/prepare-*.mjs — not committed.
 resources/runtime/
 resources/harness/
+harness.zip

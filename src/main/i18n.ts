@@ -6,6 +6,7 @@ const zhCN = {
   splashStarting: "正在启动…",
   splashInit: "初始化中…",
   splashStartHarness: "正在启动 Harness…",
+  splashPreparing: "首次运行，正在准备 Harness…",
   splashReady: "就绪",
   splashFailed: "启动失败",
 
@@ -92,6 +93,7 @@ const enUS: Record<keyof typeof zhCN, string> = {
   splashStarting: "Starting…",
   splashInit: "Initializing…",
   splashStartHarness: "Starting Harness…",
+  splashPreparing: "First run — preparing Harness…",
   splashReady: "Ready",
   splashFailed: "Failed to start",
 

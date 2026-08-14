@@ -23,14 +23,14 @@ files:
   - resources/settings.html
   - resources/settings.js
 
-# Phase 4/5: embedded Node runtime + vendored Harness go outside the ASAR.
-# Note: `from` must NOT have a root-level `node_modules` — electron-builder
-# unconditionally filters those out (createFilter), so point one level deeper.
+# Phase 4/5: embedded Node runtime goes outside the ASAR.
+# The Harness ships as ONE archive (harness.zip) so the installer copies a few
+# files instead of ~11k; the app extracts it on first run (fast install).
 extraResources:
   - from: resources/runtime
     to: runtime
-  - from: resources/harness/node_modules
-    to: harness/node_modules
+  - from: resources/harness.zip
+    to: harness.zip
 
 win:
   icon: build/icon.ico

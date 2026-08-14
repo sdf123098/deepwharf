@@ -1,5 +1,6 @@
 import { app, BrowserWindow, dialog, shell, ipcMain, Menu, nativeTheme } from "electron";
 import { spawnSync } from "node:child_process";
+import { existsSync, mkdirSync } from "node:fs";
 import { join } from "node:path";
 import { HarnessProcessManager } from "./harness-process";
 import { findFreePort } from "./port";
@@ -69,6 +70,8 @@ async function bootstrap(): Promise<void> {
   setSplashVersion(splash, `v${app.getVersion()}`);
   setStatus(t("splashInit"));
 
+  ensureHarnessReady();
+
   if (!paths.harnessEntry) {
     return fail(t("harnessNotFound"));
   }
@@ -107,6 +110,26 @@ async function bootstrap(): Promise<void> {
 function applyTheme(): void {
   const theme = readSettings().theme;
   nativeTheme.themeSource = theme === "auto" ? "system" : theme;
+}
+
+/**
+ * First run: the installer ships a single harness.zip; extract it into
+ * resources/harness so the vendored runtime is present. Keeps the installer fast.
+ */
+function ensureHarnessReady(): void {
+  if (!app.isPackaged) return; // dev uses the npx cache
+  const harnessRoot = join(process.resourcesPath, "harness");
+  const entry = join(harnessRoot, "node_modules", "@deepseek-ai", "dsh", "lib", "bin.js");
+  if (existsSync(entry)) return;
+  const zip = join(process.resourcesPath, "harness.zip");
+  if (!existsSync(zip)) return;
+  setStatus(t("splashPreparing"));
+  log.log("first run: extracting harness.zip …");
+  mkdirSync(harnessRoot, { recursive: true });
+  const r = spawnSync("C:\\Windows\\System32\\tar.exe", ["-xf", zip, "-C", harnessRoot], {
+    windowsHide: true,
+  });
+  log.log("harness extraction exit:", r.status);
 }
 
 /** Allocate a port, spawn the harness, wait for it to be ready. */
