@@ -1,0 +1,27 @@
+{
+  "name": "deepwharf",
+  "productName": "DeepWharf",
+  "version": "0.1.0",
+  "description": "DeepWharf — a desktop home for DeepSeek Harness. Double-click to run dsh web as a native app.",
+  "main": "dist/main/index.js",
+  "author": "DeepWharf Contributors",
+  "private": true,
+  "license": "MIT",
+  "scripts": {
+    "build": "tsc",
+    "dev": "tsc && electron .",
+    "start": "electron .",
+    "icon": "node scripts/make-icon.mjs",
+    "prepare:node": "node scripts/prepare-node.mjs",
+    "prepare:harness": "node scripts/prepare-harness.mjs",
+    "prune": "node scripts/prune-harness.mjs",
+    "dist": "tsc && electron-builder --win"
+  },
+  "devDependencies": {
+    "electron": "^43.4.0",
+    "electron-builder": "^26.15.3",
+    "png-to-ico": "^3.0.2",
+    "sharp": "^0.35.3",
+    "typescript": "^7.0.2"
+  }
+}

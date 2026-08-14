@@ -1,0 +1,56 @@
+appId: com.deepwharf.desktop
+productName: DeepWharf
+
+# Fast install: no compression (pure copy). The payload is already pruned; the
+# installer trades download size for much quicker extraction on disk.
+compression: store
+
+directories:
+  output: release
+  buildResources: build
+
+# GitHub 直连不通，Electron 发行包走 npmmirror 镜像。
+electronDownload:
+  mirror: https://npmmirror.com/mirrors/electron/
+
+files:
+  - dist/**/*
+  - resources/splash.html
+  - resources/main-shell.html
+  - resources/main-shell.js
+  - resources/plugin-store.html
+  - resources/plugin-store.js
+  - resources/settings.html
+  - resources/settings.js
+
+# Phase 4/5: embedded Node runtime + vendored Harness go outside the ASAR.
+# Note: `from` must NOT have a root-level `node_modules` — electron-builder
+# unconditionally filters those out (createFilter), so point one level deeper.
+extraResources:
+  - from: resources/runtime
+    to: runtime
+  - from: resources/harness/node_modules
+    to: harness/node_modules
+
+win:
+  icon: build/icon.ico
+  target:
+    - target: nsis
+      arch: [x64]
+    - target: portable
+      arch: [x64]
+
+nsis:
+  # 一键安装：双击即装，无向导、无 UAC（per-user 安装到 %LOCALAPPDATA%\Programs）。
+  oneClick: true
+  perMachine: false
+  # 覆盖安装 / 卸载时保留用户数据（sessions、profiles、settings 在 %APPDATA%）。
+  deleteAppDataOnUninstall: false
+  # 开始菜单快捷方式名称，保证按字母 D 可检索。
+  createStartMenuShortcut: true
+  createDesktopShortcut: true
+  shortcutName: DeepWharf
+  artifactName: DeepWharf-Setup-${version}-x64.${ext}
+
+portable:
+  artifactName: DeepWharf-Portable-${version}-x64.${ext}

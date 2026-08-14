@@ -1,0 +1,58 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta http-equiv="Content-Security-Policy" content="default-src 'self'; style-src 'unsafe-inline'; script-src 'self'">
+<style>
+  :root { --bg:#0d1117; --panel:#161b22; --border:#21262d; --text:#e6edf3; --muted:#8b949e;
+          --accent:#4f8cff; }
+  @media (prefers-color-scheme: light) {
+    :root { --bg:#ffffff; --panel:#f6f8fa; --border:#d0d7de; --text:#1f2328; --muted:#57606a;
+            --accent:#0969da; }
+  }
+  * { box-sizing: border-box; }
+  html, body { margin:0; height:100%; background:var(--bg); color:var(--text);
+    font-family: system-ui, "Segoe UI", "Microsoft YaHei", sans-serif; font-size:14px; }
+  main { padding: 18px 22px; overflow-y:auto; height:100%; }
+  h1 { font-size:16px; margin:0 0 16px; font-weight:600; }
+  h2 { font-size:13px; color:var(--muted); text-transform:uppercase; letter-spacing:.5px;
+    margin:20px 0 10px; font-weight:600; }
+  .row { display:flex; align-items:center; justify-content:space-between; gap:12px;
+    background:var(--panel); border:1px solid var(--border); border-radius:8px;
+    padding:11px 14px; margin-bottom:8px; }
+  .row .label { font-size:13px; }
+  .row .sub { color:var(--muted); font-size:11px; }
+  select, button { background:var(--bg); color:var(--text); border:1px solid var(--border);
+    border-radius:6px; padding:6px 12px; font-size:13px; cursor:pointer; }
+  button.primary { background:var(--accent); border-color:var(--accent); color:#fff; }
+  input[type=checkbox] { width:16px; height:16px; accent-color:var(--accent); }
+  .ver { font-family: ui-monospace, Consolas, monospace; color:var(--accent); }
+  .footer { color:var(--muted); font-size:11px; margin-top:16px; }
+</style>
+</head>
+<body>
+<main>
+  <h1 id="title">外壳设置</h1>
+
+  <h2 id="secAppearance">外观与行为</h2>
+  <div class="row"><div><div class="label" id="lblLang">界面语言</div></div>
+    <select id="language"><option value="auto">跟随系统</option><option value="zh-CN">中文</option><option value="en-US">English</option></select></div>
+  <div class="row"><div><div class="label" id="lblTheme">外观主题</div></div>
+    <select id="theme"><option value="auto">跟随系统</option><option value="light">浅色</option><option value="dark">深色</option></select></div>
+  <div class="row"><div class="label" id="lblAutoHarness">启动时检查 Harness 更新</div><input type="checkbox" id="autoCheckUpdates"></div>
+  <div class="row"><div class="label" id="lblAutoShell">启动时检查外壳更新</div><input type="checkbox" id="autoCheckShell"></div>
+  <div class="row"><div class="label" id="lblDevtools">启动时打开开发者工具</div><input type="checkbox" id="devtoolsOnStart"></div>
+
+  <h2 id="secAbout">版本与更新</h2>
+  <div class="row"><div><div class="label" id="lblVerDesktop">外壳版本</div><div class="sub ver" id="verDesktop">-</div></div>
+    <button id="checkShell">检查更新</button></div>
+  <div class="row"><div><div class="label" id="lblVerHarness">Harness 版本</div><div class="sub ver" id="verHarness">-</div></div>
+    <button id="checkHarness">检查更新</button></div>
+  <div class="row"><div><div class="label" id="lblVerNode">Node 版本</div><div class="sub ver" id="verNode">-</div></div></div>
+  <div class="row"><div class="label" id="lblLogs">日志</div><button id="openLogs">打开日志目录</button></div>
+
+  <div class="footer" id="footer"></div>
+</main>
+<script src="settings.js"></script>
+</body>
+</html>

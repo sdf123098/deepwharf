@@ -1,0 +1,40 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta http-equiv="Content-Security-Policy" content="default-src 'self'; style-src 'unsafe-inline'; script-src 'self'">
+<style>
+  :root { --bar-bg:#0d1117; --bar-border:#1b2130; --bar-text:#e6edf3; --bar-muted:#9aa7bd; --bar-hover:#1b2434; }
+  @media (prefers-color-scheme: light) {
+    :root { --bar-bg:#ffffff; --bar-border:#e3e6ea; --bar-text:#1a1f28; --bar-muted:#5a6472; --bar-hover:#eef1f5; }
+  }
+  html, body { height: 100%; margin: 0; overflow: hidden; background: var(--bar-bg);
+    font-family: system-ui, "Segoe UI", "Microsoft YaHei", sans-serif; color: var(--bar-text); }
+  body { display: flex; flex-direction: column; }
+  /* Single merged title bar: draggable, with native window controls overlaid on the right. */
+  #titlebar { flex: 0 0 40px; display: flex; align-items: center; gap: 4px;
+    padding: 0 138px 0 10px; /* right space reserved for native min/max/close overlay */
+    background: var(--bar-bg); border-bottom: 1px solid var(--bar-border);
+    -webkit-app-region: drag; user-select: none; }
+  #titlebar .logo { width: 20px; height: 20px; border-radius: 5px; margin-right: 8px; }
+  #titlebar .title { font-size: 13px; font-weight: 600; margin-right: 14px; color: var(--bar-text); }
+  #titlebar button { -webkit-app-region: no-drag; background: transparent; color: var(--bar-muted);
+    border: none; border-radius: 6px; padding: 6px 12px; font-size: 13px; cursor: pointer; }
+  #titlebar button:hover { background: var(--bar-hover); color: var(--bar-text); }
+  webview { flex: 1; width: 100%; border: none; }
+</style>
+</head>
+<body>
+  <div id="titlebar">
+    <svg class="logo" viewBox="0 0 50 50" xmlns="http://www.w3.org/2000/svg">
+      <rect width="50" height="50" rx="11.25" fill="#4D6BFE"/>
+      <path fill="#fff" d="M48.8354 10.0479C48.3232 9.79199 48.1025 10.2798 47.8032 10.5278C47.7007 10.6079 47.6143 10.7119 47.5273 10.8076C46.7793 11.624 45.9048 12.1597 44.7622 12.0957C43.0923 12 41.666 12.5356 40.4058 13.8398C40.1377 12.2319 39.2476 11.272 37.8926 10.6558C37.1836 10.3359 36.4668 10.0156 35.9702 9.31982C35.6235 8.82373 35.5293 8.27197 35.356 7.72754C35.2456 7.3999 35.1353 7.06396 34.7651 7.00781C34.3633 6.94385 34.2056 7.2876 34.0479 7.57568C33.418 8.75195 33.1733 10.0479 33.1973 11.3599C33.2524 14.312 34.4736 16.6641 36.8999 18.3359C37.1758 18.5278 37.2466 18.7197 37.1597 19C36.9946 19.5757 36.7974 20.1357 36.624 20.7119C36.5137 21.0801 36.3486 21.1597 35.9624 21C34.6309 20.4321 33.481 19.5918 32.4644 18.5757C30.7393 16.8721 29.1792 14.9917 27.2334 13.52C26.7764 13.1758 26.3193 12.856 25.8467 12.5518C23.8618 10.584 26.1069 8.96777 26.627 8.77588C27.1704 8.57568 26.8159 7.8877 25.0591 7.896C23.3022 7.90381 21.6953 8.50391 19.647 9.30371C19.3477 9.42383 19.0322 9.51172 18.7095 9.58398C16.8501 9.22363 14.9199 9.14355 12.9033 9.37598C9.10596 9.80762 6.07275 11.6396 3.84326 14.7681C1.16455 18.5278 0.53418 22.7998 1.30664 27.2559C2.11768 31.9521 4.46582 35.8398 8.07373 38.8799C11.8159 42.0322 16.1255 43.5762 21.041 43.2803C24.0269 43.104 27.3516 42.6963 31.1016 39.4561C32.0469 39.936 33.0396 40.1279 34.686 40.272C35.9546 40.3921 37.1758 40.208 38.1211 40.0078C39.6021 39.688 39.4995 38.2881 38.9639 38.0322C34.623 35.9678 35.5762 36.8081 34.71 36.1279C36.9155 33.4639 40.2402 30.6958 41.54 21.728C41.6426 21.0161 41.5557 20.5679 41.54 19.9917C41.5322 19.6396 41.6108 19.5039 42.0049 19.4639C43.0923 19.3359 44.1479 19.0317 45.1167 18.4878C47.9292 16.9199 49.064 14.3438 49.3315 11.2559C49.3711 10.7837 49.3237 10.2959 48.8354 10.0479Z"/>
+    </svg>
+    <span class="title">DeepWharf</span>
+    <button id="btnStore">插件商店</button>
+    <button id="btnSettings">外壳设置</button>
+  </div>
+  <webview id="harness" preload=""></webview>
+  <script src="main-shell.js"></script>
+</body>
+</html>

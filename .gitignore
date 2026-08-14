@@ -1,0 +1,11 @@
+node_modules/
+dist/
+release/
+.tmp/
+.tmp-*/
+.smoke/
+*.log
+
+# Embedded runtimes are fetched by scripts/prepare-*.mjs — not committed.
+resources/runtime/
+resources/harness/
