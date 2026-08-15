@@ -48,7 +48,7 @@ npm run dist               # 打包 NSIS + Portable -> release/
 ## 说明
 
 - 安装速度：Harness 已裁剪（去掉源码/source-map/文档），NSIS 使用 `compression: store` 加快解压。
-- 代码签名：可插拔钩子 `scripts/sign.js`（`DEEPMHARF_SIGN_MODE=test|pfx|sigpath|none`）。发布产物由 GitHub Actions CI 构建，获批后将经 SignPath Foundation 签名；详见 [CODE_SIGNING.md](./CODE_SIGNING.md)。
+- 代码签名：可插拔钩子 `scripts/sign.js`（`DEEPMHARF_SIGN_MODE=test|pfx|sigpath|none`）。发布产物由 GitHub Actions CI 构建，经 SignPath Foundation 签名（Free code signing provided by [SignPath.io](https://signpath.io)，certificate by [SignPath Foundation](https://signpath.org)）；详见 [CODE_SIGNING.md](./CODE_SIGNING.md)。
 - 外壳自更新：设置 `SHELL_UPDATE_URL` 指向 `{ "version": "x.y.z" }` 即可启用检查。
 
 ## 许可证
