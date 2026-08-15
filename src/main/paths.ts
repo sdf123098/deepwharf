@@ -1,6 +1,7 @@
 import { app } from "electron";
-import { existsSync, readdirSync, statSync } from "node:fs";
+import { existsSync, readdirSync, statSync, readFileSync } from "node:fs";
 import { join } from "node:path";
+import { semverGt } from "./pure";
 
 export interface ResolvedPaths {
   nodeExecutable: string;
@@ -41,12 +42,16 @@ export function resolvePaths(): ResolvedPaths {
   };
 }
 
-/** Locate the newest `@deepseek-ai/dsh` installed through npx in the npm cache. */
+/**
+ * Locate `@deepseek-ai/dsh` installed through npx in the npm cache, preferring
+ * the highest semver version over the newest mtime (mtime is unreliable — a
+ * failed or copied cache entry can look newest).
+ */
 function findNpxHarnessEntry(): string | null {
   const cacheRoot = join(process.env.LOCALAPPDATA || "", "npm-cache", "_npx");
   if (!existsSync(cacheRoot)) return null;
 
-  let best: { path: string; mtime: number } | null = null;
+  let best: { path: string; version: string | null } | null = null;
   for (const dir of readdirSync(cacheRoot)) {
     const entry = join(
       cacheRoot,
@@ -57,9 +62,20 @@ function findNpxHarnessEntry(): string | null {
       "lib",
       "bin.js",
     );
-    if (existsSync(entry)) {
-      const mtime = statSync(entry).mtimeMs;
-      if (!best || mtime > best.mtime) best = { path: entry, mtime };
+    if (!existsSync(entry)) continue;
+    let version: string | null = null;
+    try {
+      const pkgJson = join(cacheRoot, dir, "node_modules", "@deepseek-ai", "dsh", "package.json");
+      version = JSON.parse(readFileSync(pkgJson, "utf8")).version ?? null;
+    } catch {
+      // unreadable manifest — fall back to mtime tie-break below
+    }
+    if (
+      !best ||
+      (version && (!best.version || semverGt(version, best.version))) ||
+      (!version && !best.version && statSync(entry).mtimeMs > statSync(best.path).mtimeMs)
+    ) {
+      best = { path: entry, version };
     }
   }
   return best?.path ?? null;

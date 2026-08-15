@@ -16,11 +16,13 @@ export interface PluginInfo {
   dshBundle: boolean;
   /** False for non-npm sources (e.g. GitHub topic) — no install button. */
   installable: boolean;
+  /** Category tag for curated sources (e.g. awesome-dsh-plugin). */
+  category: string;
 }
 
 export interface PluginSource {
   id: string;
-  kind: "npm" | "github";
+  kind: "npm" | "github" | "curated";
   registry?: string;
 }
 
@@ -32,6 +34,7 @@ export const PLUGIN_SOURCES: PluginSource[] = (() => {
   const list: PluginSource[] = [
     { id: "npmmirror", kind: "npm", registry: "https://registry.npmmirror.com" },
     { id: "npmjs", kind: "npm", registry: "https://registry.npmjs.org" },
+    { id: "awesome", kind: "curated" },
     { id: "github", kind: "github" },
   ];
   if (process.env.DSH_PLUGIN_SEARCH_URL) {
@@ -116,6 +119,7 @@ async function searchNpmPlugins(
     score: o.score?.final ?? 0,
     dshBundle: false,
     installable: true,
+    category: "",
   }));
   // Verify each candidate against its published manifest so only real Harness
   // bundles are presented as plugins.
@@ -154,6 +158,67 @@ async function searchGithubPlugins(query: string): Promise<PluginInfo[]> {
     score: r.stargazers_count ?? 0,
     dshBundle: false,
     installable: false,
+    category: "",
+  }));
+}
+
+// --- curated community list: awesome-dsh-plugin (machine-readable data) ------
+
+const AWESOME_DATA_URL =
+  "https://raw.githubusercontent.com/bruc3van/awesome-dsh-plugin/main/data/repositories.json";
+const AWESOME_CACHE_MS = 30 * 60 * 1000;
+// The harness itself carries the topic tag but is not a plugin.
+const AWESOME_EXCLUDED = new Set(["deepseek-ai/deepseek-harness"]);
+
+interface AwesomeRepo {
+  full_name: string;
+  html_url: string;
+  description?: string;
+  category_en?: string;
+  stargazers_count?: number;
+  archived?: boolean;
+  disabled?: boolean;
+  topics?: string[];
+}
+
+let awesomeCache: { fetchedAt: number; repos: AwesomeRepo[] } | null = null;
+
+async function getAwesomeRepos(): Promise<AwesomeRepo[]> {
+  if (awesomeCache && Date.now() - awesomeCache.fetchedAt < AWESOME_CACHE_MS) {
+    return awesomeCache.repos;
+  }
+  const res = await fetch(AWESOME_DATA_URL, { signal: AbortSignal.timeout(20000) });
+  if (!res.ok) throw new Error(`awesome list responded ${res.status}`);
+  const data = (await res.json()) as { repositories?: AwesomeRepo[] };
+  awesomeCache = { fetchedAt: Date.now(), repos: data.repositories ?? [] };
+  return awesomeCache.repos;
+}
+
+async function searchAwesomePlugins(query: string): Promise<PluginInfo[]> {
+  const q = query.trim().toLowerCase();
+  const repos = (await getAwesomeRepos()).filter(
+    (r) => !AWESOME_EXCLUDED.has(r.full_name) && !r.archived && !r.disabled,
+  );
+  const hits = q
+    ? repos.filter((r) =>
+        [r.full_name, r.description, r.category_en, (r.topics ?? []).join(" ")]
+          .join(" ")
+          .toLowerCase()
+          .includes(q),
+      )
+    : repos;
+  hits.sort((a, b) => (b.stargazers_count ?? 0) - (a.stargazers_count ?? 0));
+  return hits.slice(0, 30).map((r) => ({
+    name: r.full_name,
+    version: "",
+    description: r.description ?? "",
+    author: r.full_name.split("/")[0] ?? "",
+    date: "",
+    repository: r.html_url,
+    score: r.stargazers_count ?? 0,
+    dshBundle: false,
+    installable: false,
+    category: r.category_en ?? "",
   }));
 }
 
@@ -163,6 +228,7 @@ export async function searchPlugins(
   source: PluginSource,
 ): Promise<PluginInfo[]> {
   if (source.kind === "github") return searchGithubPlugins(query);
+  if (source.kind === "curated") return searchAwesomePlugins(query);
   return searchNpmPlugins(query, from, source.registry ?? "https://registry.npmmirror.com");
 }
 
@@ -212,8 +278,14 @@ export function listInstalled(ctx: PluginStoreContext): string[] {
   try {
     const pkgJson = join(ctx.dshHome, "profiles", "web", "package.json");
     if (!existsSync(pkgJson)) return [];
-    const deps = JSON.parse(readFileSync(pkgJson, "utf8")).dependencies ?? {};
-    return Object.keys(deps).filter((d) => d.startsWith("dsh-") || d.includes("dsh"));
+    const manifest = JSON.parse(readFileSync(pkgJson, "utf8"));
+    // The profile's active bundles are the real plugin set — the old name
+    // heuristic missed bundles whose names don't contain "dsh".
+    const bundles = manifest?.dsh?.profile?.bundles;
+    if (Array.isArray(bundles)) return bundles.filter((b) => typeof b === "string");
+    // Degraded fallback for profiles without a bundles list.
+    const deps = manifest?.dependencies ?? {};
+    return Object.keys(deps);
   } catch {
     return [];
   }

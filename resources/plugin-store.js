@@ -25,8 +25,9 @@ const I18N = {
     srcCustom: "自定义 (env)",
     srcNpmmirror: "npmmirror（国内镜像）",
     srcNpmjs: "npm 官方",
+    srcAwesome: "社区精选（awesome-dsh-plugin）",
     srcGithub: "GitHub 社区（dsh-plugin）",
-    footer: "可切换 npm registry 源与 GitHub 社区主题；仅声明 dsh.bundle 的包可安装。",
+    footer: "可切换 npm registry、社区精选列表与 GitHub 主题源；仅声明 dsh.bundle 的包可安装。",
   },
   "en-US": {
     title: "Plugin Store",
@@ -50,8 +51,9 @@ const I18N = {
     srcCustom: "Custom (env)",
     srcNpmmirror: "npmmirror (CN mirror)",
     srcNpmjs: "npm official",
+    srcAwesome: "Community curated (awesome-dsh-plugin)",
     srcGithub: "GitHub community (dsh-plugin)",
-    footer: "Switch between npm registry sources and the GitHub community topic; only packages declaring dsh.bundle are installable.",
+    footer: "Switch between npm registries, the curated community list and the GitHub topic; only packages declaring dsh.bundle are installable.",
   },
 };
 const S = I18N[LANG] || I18N["en-US"];
@@ -74,6 +76,7 @@ const SOURCE_LABELS = {
   custom: S.srcCustom,
   npmmirror: S.srcNpmmirror,
   npmjs: S.srcNpmjs,
+  awesome: S.srcAwesome,
   github: S.srcGithub,
 };
 
@@ -107,7 +110,7 @@ function render(plugins) {
         ? `<span class="tag ${p.dshBundle ? "ok" : "warn"}">${
             p.dshBundle ? esc(S.tagPlugin) : esc(S.tagNotPlugin)
           }</span>`
-        : `<span class="tag warn">${esc(S.tagRepo)}</span>`;
+        : `<span class="tag warn">${esc(p.category || S.tagRepo)}</span>`;
       const action = p.installable
         ? `<button data-pkg="${esc(p.name)}" class="${installed.has(p.name) ? "done" : ""}"
              ${installed.has(p.name) || !p.dshBundle ? "disabled" : ""}>${

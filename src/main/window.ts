@@ -77,7 +77,11 @@ export function createMainWindow(port: number, lang: string): BrowserWindow {
       webviewTag: true, // embeds the live Harness WebUI
     },
   });
-  nativeTheme.on("updated", () => applyTitleBarOverlay(win));
+  // Keep the title-bar overlay in sync with the OS theme, and drop the
+  // listener when the window goes away so nativeTheme does not hold it.
+  const onThemeUpdated = () => applyTitleBarOverlay(win);
+  nativeTheme.on("updated", onThemeUpdated);
+  win.on("closed", () => nativeTheme.removeListener("updated", onThemeUpdated));
   win.loadFile(join(__dirname, "../../resources/main-shell.html"), {
     query: { port: String(port), lang },
   });

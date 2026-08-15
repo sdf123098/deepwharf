@@ -98,7 +98,11 @@ export async function installHarnessUpdate(
       { windowsHide: true, env: { ...process.env, npm_config_registry: UPDATE_REGISTRY } },
     );
     let stderr = "";
-    child.stderr.on("data", (c) => (stderr += c));
+    const appendStderr = (c: Buffer) => {
+      stderr += c.toString();
+      if (stderr.length > 64 * 1024) stderr = stderr.slice(-64 * 1024);
+    };
+    child.stderr.on("data", appendStderr);
     child.on("error", reject);
     child.on("exit", (code) =>
       code === 0 ? resolve() : reject(new Error(`npm install failed (code ${code}): ${stderr.slice(0, 500)}`)),
