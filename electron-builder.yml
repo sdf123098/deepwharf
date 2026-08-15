@@ -39,6 +39,13 @@ win:
       arch: [x64]
     - target: portable
       arch: [x64]
+  # Pluggable code signing: scripts/sign.js is invoked for every Windows
+  # artifact. Modes are selected via DEEPMHARF_SIGN_MODE:
+  #   test (default) — self-signed test chain; pfx — CSC_LINK real cert;
+  #   sigpath — SignPath Foundation; none — unsigned. See scripts/sign.js.
+  signtoolOptions:
+    sign: ./scripts/sign.js
+    signingHashAlgorithms: ["sha256"]
 
 nsis:
   # 一键安装：双击即装，无向导、无 UAC（per-user 安装到 %LOCALAPPDATA%\Programs）。
