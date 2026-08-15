@@ -1,7 +1,7 @@
 {
   "name": "deepwharf",
   "productName": "DeepWharf",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "description": "DeepWharf — a desktop home for DeepSeek Harness. Double-click to run dsh web as a native app.",
   "main": "dist/main/index.js",
   "author": "DeepWharf Contributors",
