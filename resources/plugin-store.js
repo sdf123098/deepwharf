@@ -60,7 +60,8 @@ const S = I18N[LANG] || I18N["en-US"];
 
 document.title = S.title;
 document.getElementById("title").textContent = S.title;
-document.getElementById("searchBtn").textContent = S.search;
+document.getElementById("searchBtn").title = S.search;
+document.getElementById("searchBtn").setAttribute("aria-label", S.search);
 document.getElementById("q").placeholder = S.placeholder;
 document.getElementById("footer").textContent = S.footer;
 

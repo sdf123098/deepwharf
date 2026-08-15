@@ -3,6 +3,7 @@ import { spawn } from "node:child_process";
 import { readFileSync, existsSync } from "node:fs";
 import { join, dirname } from "node:path";
 import { localeForRenderer } from "./i18n";
+import { rememberedWindowBounds, trackWindowBounds } from "./window";
 
 export interface PluginInfo {
   name: string;
@@ -301,8 +302,9 @@ export function openPluginStore(preloadPath: string, locale: string): void {
     return;
   }
   storeWindow = new BrowserWindow({
-    width: 920,
-    height: 680,
+    width: 1100,
+    height: 760,
+    ...rememberedWindowBounds("store", { width: 700, height: 480 }),
     minWidth: 700,
     minHeight: 480,
     backgroundColor: "#0d1117",
@@ -314,6 +316,7 @@ export function openPluginStore(preloadPath: string, locale: string): void {
       sandbox: true,
     },
   });
+  trackWindowBounds("store", storeWindow);
   // Registry metadata (repository/homepage) is not a trusted navigation target:
   // deny everything and only open https: links in the system browser.
   storeWindow.webContents.setWindowOpenHandler(({ url }) => {

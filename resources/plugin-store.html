@@ -28,6 +28,8 @@
   button:disabled { opacity:.5; cursor:default; }
   button.ghost { background:transparent; color:var(--accent); border:1px solid var(--accent); }
   button.done { background:transparent; color:var(--green); border:1px solid var(--green); cursor:default; }
+  button.icon { display:flex; align-items:center; justify-content:center; padding:7px 10px; }
+  button.icon svg { display:block; }
   main { padding:14px 18px; overflow-y:auto; height:calc(100% - 62px); }
   .meta { color:var(--muted); font-size:12px; margin-bottom:12px; }
   .progress { background:var(--panel); border:1px solid var(--border); border-radius:8px;
@@ -58,7 +60,12 @@
   <div class="search">
     <select id="src" title="插件源"></select>
     <input id="q" type="text" placeholder="Search plugins…">
-    <button id="searchBtn">Search</button>
+    <button id="searchBtn" class="icon" type="button" title="Search" aria-label="Search">
+      <svg width="15" height="15" viewBox="0 0 16 16" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
+        <circle cx="7" cy="7" r="4.6" stroke="currentColor" stroke-width="1.6"/>
+        <line x1="10.6" y1="10.6" x2="14.2" y2="14.2" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/>
+      </svg>
+    </button>
   </div>
 </header>
 <main>

@@ -13,6 +13,7 @@ const DEFAULTS: DesktopSettings = {
   language: "auto",
   theme: "auto",
   devtoolsOnStart: false,
+  windowBounds: {},
 };
 
 export function settingsPath(): string {

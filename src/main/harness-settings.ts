@@ -9,6 +9,7 @@ import { ipcMain, BrowserWindow } from "electron";
 import { randomUUID } from "node:crypto";
 import { join } from "node:path";
 import { localeForRenderer } from "./i18n";
+import { rememberedWindowBounds, trackWindowBounds } from "./window";
 import {
   buildMutateOps,
   describeToView,
@@ -150,6 +151,7 @@ export function openHarnessSettingsWindow(preloadPath: string, locale: string): 
   harnessSettingsWindow = new BrowserWindow({
     width: 640,
     height: 660,
+    ...rememberedWindowBounds("harnessSettings", { width: 560, height: 520 }),
     minWidth: 560,
     minHeight: 520,
     backgroundColor: "#0d1117",
@@ -161,6 +163,7 @@ export function openHarnessSettingsWindow(preloadPath: string, locale: string): 
       sandbox: true,
     },
   });
+  trackWindowBounds("harnessSettings", harnessSettingsWindow);
   harnessSettingsWindow.loadFile(join(__dirname, "../../resources/harness-settings.html"), {
     query: { lang: locale },
   });

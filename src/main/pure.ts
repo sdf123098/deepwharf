@@ -17,6 +17,38 @@ export interface DesktopSettings {
   language: "auto" | "zh-CN" | "en-US";
   theme: "auto" | "light" | "dark";
   devtoolsOnStart: boolean;
+  // Per-window geometry, keyed by window id ("main", "settings", "store", "harnessSettings").
+  windowBounds: Record<string, WindowBounds>;
+}
+
+/** A window's remembered position and size. Position is optional: stale or off-screen coords are dropped. */
+export interface WindowBounds {
+  x?: number;
+  y?: number;
+  width: number;
+  height: number;
+}
+
+/** Absolute floor for any remembered size; per-window minimums clamp at apply time. */
+export const MIN_WINDOW_SIZE = { width: 400, height: 300 };
+
+/**
+ * Validate one remembered geometry entry. Width/height must be finite numbers
+ * at or above the absolute floor; x/y must be finite numbers when present.
+ * Anything else is rejected so a corrupt desktop.json never breaks window
+ * creation.
+ */
+export function sanitizeWindowBounds(input: unknown): WindowBounds | undefined {
+  if (!input || typeof input !== "object") return undefined;
+  const o = input as Record<string, unknown>;
+  const width = typeof o.width === "number" && Number.isFinite(o.width) ? Math.round(o.width) : NaN;
+  const height = typeof o.height === "number" && Number.isFinite(o.height) ? Math.round(o.height) : NaN;
+  if (!Number.isFinite(width) || !Number.isFinite(height)) return undefined;
+  if (width < MIN_WINDOW_SIZE.width || height < MIN_WINDOW_SIZE.height) return undefined;
+  const out: WindowBounds = { width, height };
+  if (typeof o.x === "number" && Number.isFinite(o.x)) out.x = Math.round(o.x);
+  if (typeof o.y === "number" && Number.isFinite(o.y)) out.y = Math.round(o.y);
+  return out;
 }
 
 const THEMES = ["auto", "light", "dark"] as const;
@@ -49,6 +81,14 @@ export function sanitizeSettingsPatch(input: unknown): Partial<DesktopSettings> 
   }
   if (typeof o.theme === "string" && (THEMES as readonly string[]).includes(o.theme)) {
     patch.theme = o.theme as DesktopSettings["theme"];
+  }
+  if (o.windowBounds && typeof o.windowBounds === "object" && !Array.isArray(o.windowBounds)) {
+    const record: Record<string, WindowBounds> = {};
+    for (const [key, value] of Object.entries(o.windowBounds as Record<string, unknown>)) {
+      const bounds = sanitizeWindowBounds(value);
+      if (bounds) record[key] = bounds;
+    }
+    if (Object.keys(record).length > 0) patch.windowBounds = record;
   }
   return patch;
 }
