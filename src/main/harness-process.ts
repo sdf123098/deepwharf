@@ -3,9 +3,10 @@ import {
   spawnSync,
   type ChildProcessWithoutNullStreams,
 } from "node:child_process";
-import { appendFileSync, mkdirSync } from "node:fs";
+import { createWriteStream, mkdirSync, type WriteStream } from "node:fs";
 import { dirname } from "node:path";
 import { EventEmitter } from "node:events";
+import { rotateLogFile } from "./log";
 
 export interface HarnessOptions {
   nodeExecutable: string;
@@ -41,6 +42,7 @@ export class HarnessProcessManager extends EventEmitter {
   private lastPid: number | null = null;
   private stopping = false;
   private _port = 0;
+  private logStream: WriteStream | null = null;
 
   get port(): number {
     return this._port;
@@ -56,6 +58,12 @@ export class HarnessProcessManager extends EventEmitter {
     this.stopping = false;
     mkdirSync(dirname(opts.harnessLog), { recursive: true });
 
+    // Stream the harness output to disk asynchronously (rotation at start so
+    // a long-lived agent session never blocks the main process on sync I/O).
+    rotateLogFile(opts.harnessLog);
+    this.logStream = createWriteStream(opts.harnessLog, { flags: "a" });
+    this.logStream.on("error", () => {});
+
     const child = spawn(
       opts.nodeExecutable,
       [opts.harnessEntry, "web", "--port", String(opts.port)],
@@ -67,15 +75,10 @@ export class HarnessProcessManager extends EventEmitter {
     this.child = child;
     this.lastPid = child.pid ?? null;
 
-    const write = (chunk: Buffer | string) => {
-      try {
-        appendFileSync(opts.harnessLog, chunk);
-      } catch {
-        // log failure is not fatal
-      }
-    };
-    child.stdout.on("data", write);
-    child.stderr.on("data", write);
+    if (this.logStream) {
+      child.stdout.pipe(this.logStream, { end: false });
+      child.stderr.pipe(this.logStream, { end: false });
+    }
     child.on("error", (err) => {
       this.spawnError = err.message;
       this.emit("log", `spawn error: ${err.message}\n`);
@@ -85,6 +88,7 @@ export class HarnessProcessManager extends EventEmitter {
       this.child = null;
       this.lastPid = null;
       this.stopping = false;
+      this.closeLog();
       this.emit("exit", { code, signal, expected } satisfies HarnessExitInfo);
     });
   }
@@ -140,12 +144,20 @@ export class HarnessProcessManager extends EventEmitter {
     }
     this.child = null;
     this.lastPid = null;
+    this.closeLog();
   }
 
   /** Synchronous tree kill — safe to call from process 'exit'. */
   killNow(): void {
     if (this.lastPid !== null) {
       this.killTree(this.lastPid);
+    }
+  }
+
+  private closeLog(): void {
+    if (this.logStream) {
+      this.logStream.end();
+      this.logStream = null;
     }
   }
 

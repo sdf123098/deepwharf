@@ -1,6 +1,6 @@
 import { app, BrowserWindow, dialog, shell, ipcMain, Menu, nativeTheme } from "electron";
 import { spawnSync } from "node:child_process";
-import { existsSync, mkdirSync } from "node:fs";
+import { existsSync, mkdirSync, readdirSync, rmSync, truncateSync } from "node:fs";
 import { join } from "node:path";
 import { HarnessProcessManager, type HarnessExitInfo } from "./harness-process";
 import { findFreePort } from "./port";
@@ -525,6 +525,27 @@ function assertSettingsSender(event: Electron.IpcMainInvokeEvent): void {
   }
 }
 
+/** Truncate the desktop/harness logs (and their rotated copies) to zero. */
+function clearLogs(): void {
+  try {
+    for (const entry of readdirSync(paths.logsDir)) {
+      if (!entry.startsWith("desktop.log") && !entry.startsWith("harness.log")) continue;
+      const p = join(paths.logsDir, entry);
+      try {
+        rmSync(p, { force: true }); // rotated copies and closed files
+      } catch {
+        try {
+          truncateSync(p, 0); // file still open by a log stream — truncate instead
+        } catch {
+          // still busy — best effort
+        }
+      }
+    }
+  } catch {
+    // logs dir missing — nothing to clear
+  }
+}
+
 function registerShellIpc(): void {
   const lang = () => localeForRenderer();
   // Top-bar shell actions
@@ -572,6 +593,11 @@ function registerShellIpc(): void {
   ipcMain.handle("settings:openLogs", (e) => {
     assertSettingsSender(e);
     return shell.openPath(paths.logsDir);
+  });
+  ipcMain.handle("settings:clearLogs", (e) => {
+    assertSettingsSender(e);
+    clearLogs();
+    return { ok: true };
   });
   ipcMain.handle("settings:checkHarness", (e) => {
     assertSettingsSender(e);

@@ -4,6 +4,7 @@
  * plain Node — see test/pure.test.cjs.
  */
 import { dirname, basename } from "node:path";
+import semver from "semver";
 
 export interface DesktopSettings {
   // Harness (dsh) updates
@@ -21,22 +22,13 @@ export interface DesktopSettings {
 const THEMES = ["auto", "light", "dark"] as const;
 const LANGUAGES = ["auto", "zh-CN", "en-US"] as const;
 
-/** Minimal semver compare that understands `0.1.0-rc.N` style versions. */
+/** Standard semver comparison — handles rc/alpha/beta/build metadata correctly. */
 export function semverGt(a: string, b: string): boolean {
-  const parse = (v: string) => {
-    const [core, pre] = v.split("-");
-    const nums = core.split(".").map((n) => parseInt(n, 10) || 0);
-    const preNum = pre ? parseInt((pre.match(/\d+/) || ["0"])[0], 10) : Infinity;
-    return { nums, preNum, hasPre: !!pre };
-  };
-  const A = parse(a);
-  const B = parse(b);
-  for (let i = 0; i < 3; i++) {
-    if ((A.nums[i] || 0) !== (B.nums[i] || 0)) return (A.nums[i] || 0) > (B.nums[i] || 0);
+  try {
+    return semver.gt(a, b);
+  } catch {
+    return false; // an invalid version never compares greater
   }
-  // Same core version: a release beats a prerelease; higher rc beats lower rc.
-  if (A.hasPre !== B.hasPre) return !A.hasPre;
-  return A.preNum > B.preNum;
 }
 
 /**

@@ -27,9 +27,12 @@ test("semverGt: prerelease vs release", () => {
 });
 
 test("semverGt: partial versions and garbage", () => {
-  assert.ok(semverGt("0.10.0", "0.9"));
+  assert.ok(semverGt("0.10.0", "0.9.9"));
   assert.ok(!semverGt("abc", "0.1.0"));
-  assert.ok(semverGt("0.1.0", "nope"));
+  assert.ok(!semverGt("0.1.0", "nope"));
+  assert.ok(semverGt("1.0.0-alpha.2", "1.0.0-alpha.1"));
+  assert.ok(semverGt("1.0.0-beta.1", "1.0.0-alpha.9"));
+  assert.ok(!semverGt("1.0.0-rc.1", "1.0.0"));
 });
 
 // --- sanitizeSettingsPatch --------------------------------------------------

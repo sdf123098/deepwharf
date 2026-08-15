@@ -49,7 +49,9 @@
   <div class="row"><div><div class="label" id="lblVerHarness">Harness 版本</div><div class="sub ver" id="verHarness">-</div></div>
     <button id="checkHarness">检查更新</button></div>
   <div class="row"><div><div class="label" id="lblVerNode">Node 版本</div><div class="sub ver" id="verNode">-</div></div></div>
-  <div class="row"><div class="label" id="lblLogs">日志</div><button id="openLogs">打开日志目录</button></div>
+  <div class="row"><div><div class="label" id="lblLogs">日志</div>
+    <div class="sub">desktop.log / harness.log（含运行上下文，自动轮转，单文件 ≤ 20MB）</div></div>
+    <div style="display:flex; gap:8px;"><button id="openLogs">打开日志目录</button><button id="clearLogs">清除日志</button></div></div>
 
   <div class="footer" id="footer"></div>
 </main>

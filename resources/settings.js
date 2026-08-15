@@ -10,6 +10,8 @@ const I18N = {
     theme: "外观主题", themeLight: "浅色", themeDark: "深色",
     verDesktop: "外壳版本", verHarness: "Harness 版本", verNode: "Node 版本",
     check: "检查更新", logs: "日志", openLogs: "打开日志目录",
+    clearLogs: "清除日志", confirmClearLogs: "确定清除全部日志（desktop.log / harness.log 及其轮转文件）？",
+    logsCleared: "日志已清除。",
     footer: "部分设置（语言、开发者工具）在重启后生效。",
   },
   "en-US": {
@@ -19,6 +21,8 @@ const I18N = {
     theme: "Appearance", themeLight: "Light", themeDark: "Dark",
     verDesktop: "Shell version", verHarness: "Harness version", verNode: "Node version",
     check: "Check update", logs: "Logs", openLogs: "Open logs folder",
+    clearLogs: "Clear logs", confirmClearLogs: "Clear all logs (desktop.log / harness.log and rotated files)?",
+    logsCleared: "Logs cleared.",
     footer: "Some settings (language, DevTools) apply after a restart.",
   },
 };
@@ -68,6 +72,11 @@ $("autoCheckUpdates").addEventListener("change", (e) => window.settingsApi.set({
 $("autoCheckShell").addEventListener("change", (e) => window.settingsApi.set({ autoCheckShell: e.target.checked }));
 $("devtoolsOnStart").addEventListener("change", (e) => window.settingsApi.set({ devtoolsOnStart: e.target.checked }));
 $("openLogs").addEventListener("click", () => window.settingsApi.openLogs());
+$("clearLogs").addEventListener("click", async () => {
+  if (!confirm(S.confirmClearLogs)) return;
+  await window.settingsApi.clearLogs();
+  alert(S.logsCleared);
+});
 $("checkShell").addEventListener("click", () => window.settingsApi.checkShell());
 $("checkHarness").addEventListener("click", async () => {
   await window.settingsApi.checkHarness();

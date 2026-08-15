@@ -17,7 +17,9 @@
   header { display:flex; align-items:center; gap:12px; padding:14px 18px;
     border-bottom:1px solid var(--border); background:var(--panel); }
   header h1 { font-size:16px; margin:0; font-weight:600; flex:1; }
-  .search { display:flex; gap:8px; flex:1; max-width:520px; }
+  .search { display:flex; gap:8px; flex:1; max-width:620px; }
+  .search select { background:var(--bg); border:1px solid var(--border); color:var(--text);
+    border-radius:6px; padding:7px 8px; outline:none; font-size:13px; max-width:170px; }
   .search input { flex:1; background:var(--bg); border:1px solid var(--border); color:var(--text);
     border-radius:6px; padding:7px 12px; outline:none; }
   .search input:focus { border-color:var(--accent); }
@@ -28,6 +30,10 @@
   button.done { background:transparent; color:var(--green); border:1px solid var(--green); cursor:default; }
   main { padding:14px 18px; overflow-y:auto; height:calc(100% - 62px); }
   .meta { color:var(--muted); font-size:12px; margin-bottom:12px; }
+  .progress { background:var(--panel); border:1px solid var(--border); border-radius:8px;
+    padding:8px 12px; margin-bottom:12px; font-family: ui-monospace, Consolas, monospace;
+    font-size:11px; color:var(--muted); max-height:140px; overflow-y:auto; white-space:pre-wrap;
+    word-break:break-all; }
   .card { display:flex; gap:14px; align-items:flex-start; background:var(--panel);
     border:1px solid var(--border); border-radius:8px; padding:14px 16px; margin-bottom:10px; }
   .card .body { flex:1; min-width:0; }
@@ -50,12 +56,14 @@
 <header>
   <h1 id="title">Plugin Store</h1>
   <div class="search">
-    <input id="q" type="text" value="dsh-plugin">
+    <select id="src" title="插件源"></select>
+    <input id="q" type="text" placeholder="Search plugins…">
     <button id="searchBtn">Search</button>
   </div>
 </header>
 <main>
   <div class="meta" id="meta"></div>
+  <div class="progress" id="progress" hidden></div>
   <div id="list"></div>
   <div class="footer" id="footer"></div>
 </main>
