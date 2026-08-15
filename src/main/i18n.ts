@@ -42,6 +42,7 @@ const zhCN = {
   btnUpdateNow: "立即更新",
   btnLater: "稍后",
   btnRetry: "重试",
+  btnDownload: "去下载",
   harnessRestartFailed: "Harness 重启失败",
   harnessRestartFailedDetail: "{error}",
 
@@ -131,6 +132,7 @@ const enUS: Record<keyof typeof zhCN, string> = {
   btnUpdateNow: "Update now",
   btnLater: "Later",
   btnRetry: "Retry",
+  btnDownload: "Download",
   harnessRestartFailed: "Harness restart failed",
   harnessRestartFailedDetail: "{error}",
 

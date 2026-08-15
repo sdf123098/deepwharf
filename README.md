@@ -54,7 +54,9 @@ npm run dist               # build NSIS + Portable installers -> release/
   Release artifacts are built by GitHub Actions CI and signed via the SignPath Foundation
   (*Free code signing provided by [SignPath.io](https://signpath.io), certificate by
   [SignPath Foundation](https://signpath.org)*). See [CODE_SIGNING.md](./CODE_SIGNING.md).
-- Shell self-update feed: set `SHELL_UPDATE_URL` to a JSON `{ "version": "x.y.z" }` to enable checks.
+- Shell self-update feed: checks GitHub Releases by default
+  (`https://api.github.com/repos/sdf123098/deepwharf/releases/latest`; override the repo with
+  `SHELL_UPDATE_REPO`, or point `SHELL_UPDATE_URL` at a custom `{ "version": "x.y.z" }` JSON).
 
 ## License
 

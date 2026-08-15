@@ -15,7 +15,9 @@
     "prepare:node": "node scripts/prepare-node.mjs",
     "prepare:harness": "node scripts/prepare-harness.mjs",
     "prune": "node scripts/prune-harness.mjs",
-    "dist": "tsc && electron-builder --win"
+    "dist": "tsc && electron-builder --win",
+    "test": "tsc && node --test \"test/*.test.cjs\"",
+    "typecheck": "tsc --noEmit"
   },
   "devDependencies": {
     "electron": "^43.4.0",

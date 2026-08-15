@@ -18,12 +18,12 @@ import {
   checkForUpdate,
   installHarnessUpdate,
   currentHarnessVersion,
-  semverGt,
   type HarnessUpdateTransaction,
 } from "./harness-update";
+import { semverGt } from "./pure";
 import { t, localeForRenderer } from "./i18n";
 import { openPluginStore, registerPluginStoreIpc, type PluginStoreContext } from "./plugin-store";
-import { readSettings, writeSettings, updateSettings, sanitizeSettingsPatch, effectiveLanguage } from "./settings";
+import { readSettings, writeSettings, updateSettings, sanitizeSettingsPatch } from "./settings";
 
 let splash: BrowserWindow | null = null;
 let mainWindow: BrowserWindow | null = null;
@@ -457,45 +457,49 @@ function openSettingsWindow(): void {
 
 async function checkShellUpdate(force: boolean): Promise<void> {
   const current = app.getVersion();
-  const feed = process.env.SHELL_UPDATE_URL;
   const win = settingsWindow ?? mainWindow;
-  if (!feed) {
-    if (force && win) {
-      dialog.showMessageBox(win, {
-        type: "info",
-        title: t("upToDateTitle"),
-        message: t("shellNoFeed", { version: current }),
-      });
-    }
-    return;
-  }
+  const customFeed = process.env.SHELL_UPDATE_URL; // optional JSON { "version": "x.y.z" }
+  const repo = process.env.SHELL_UPDATE_REPO || "sdf123098/deepwharf";
+
+  let latest: string | null = null;
+  let releaseUrl: string | null = null;
   try {
-    const res = await fetch(feed, { signal: AbortSignal.timeout(10000) });
-    const meta = (await res.json()) as { version?: string };
-    const latest = meta.version;
-    if (win) {
-      if (latest && semverGt(latest, current)) {
-        dialog.showMessageBox(win, {
-          type: "info",
-          title: t("updateTitle"),
-          message: t("shellUpdateAvailable", { from: current, to: latest }),
-        });
-      } else if (force) {
-        dialog.showMessageBox(win, {
-          type: "info",
-          title: t("upToDateTitle"),
-          message: t("shellUpToDate", { version: current }),
-        });
-      }
-    }
-  } catch {
-    if (force && win) {
-      dialog.showMessageBox(win, {
-        type: "info",
-        title: t("upToDateTitle"),
-        message: t("shellNoFeed", { version: current }),
+    if (customFeed) {
+      const res = await fetch(customFeed, { signal: AbortSignal.timeout(10000) });
+      const meta = (await res.json()) as { version?: string };
+      latest = meta.version ?? null;
+    } else {
+      // Default update source: this project's GitHub Releases.
+      const res = await fetch(`https://api.github.com/repos/${repo}/releases/latest`, {
+        headers: { Accept: "application/vnd.github+json", "User-Agent": "DeepWharf" },
+        signal: AbortSignal.timeout(10000),
       });
+      if (!res.ok) throw new Error(`github responded ${res.status}`);
+      const meta = (await res.json()) as { tag_name?: string; html_url?: string };
+      latest = (meta.tag_name ?? "").replace(/^v/i, "") || null;
+      releaseUrl = meta.html_url ?? null;
     }
+  } catch (err) {
+    log.log("shell update check failed:", String(err));
+  }
+
+  if (!win) return;
+  if (latest && semverGt(latest, current)) {
+    const buttons = releaseUrl ? [t("btnDownload"), t("btnLater")] : [t("btnLater")];
+    const { response } = await dialog.showMessageBox(win, {
+      type: "info",
+      title: t("updateTitle"),
+      message: t("shellUpdateAvailable", { from: current, to: latest }),
+      buttons,
+      defaultId: 0,
+    });
+    if (response === 0 && releaseUrl) void shell.openExternal(releaseUrl);
+  } else if (force) {
+    dialog.showMessageBox(win, {
+      type: "info",
+      title: t("upToDateTitle"),
+      message: t("shellUpToDate", { version: current }),
+    });
   }
 }
 

@@ -1,7 +1,9 @@
 import { spawn } from "node:child_process";
 import { existsSync, readFileSync, renameSync, rmSync, mkdirSync } from "node:fs";
-import { join, dirname, basename } from "node:path";
+import { join, dirname } from "node:path";
 import { app } from "electron";
+import { semverGt, resolveTargetModules } from "./pure";
+import { pruneHarness } from "./harness-prune";
 
 // Update source. registry.npmjs.org is unreachable from this network, so the
 // default is the npmmirror registry (overridable via DSH_UPDATE_REGISTRY).
@@ -39,24 +41,6 @@ export function currentHarnessVersion(harnessEntry: string): string | null {
   }
 }
 
-/** Minimal semver compare that understands `0.1.0-rc.N` style versions. */
-export function semverGt(a: string, b: string): boolean {
-  const parse = (v: string) => {
-    const [core, pre] = v.split("-");
-    const nums = core.split(".").map((n) => parseInt(n, 10) || 0);
-    const preNum = pre ? parseInt((pre.match(/\d+/) || ["0"])[0], 10) : Infinity;
-    return { nums, preNum, hasPre: !!pre };
-  };
-  const A = parse(a);
-  const B = parse(b);
-  for (let i = 0; i < 3; i++) {
-    if ((A.nums[i] || 0) !== (B.nums[i] || 0)) return (A.nums[i] || 0) > (B.nums[i] || 0);
-  }
-  // Same core version: a release beats a prerelease; higher rc beats lower rc.
-  if (A.hasPre !== B.hasPre) return !A.hasPre;
-  return A.preNum > B.preNum;
-}
-
 export async function checkForUpdate(harnessEntry: string): Promise<UpdateCheck> {
   const current = currentHarnessVersion(harnessEntry);
   const res = await fetch(`${UPDATE_REGISTRY}/${PKG}/latest`, {
@@ -72,25 +56,6 @@ export async function checkForUpdate(harnessEntry: string): Promise<UpdateCheck>
   };
 }
 
-/**
- * Resolve `resources/harness/node_modules` from the dsh entry point and assert
- * the layout matches what the updater expects before touching anything.
- *
- * harnessEntry = .../harness/node_modules/@deepseek-ai/dsh/lib/bin.js
- *   -> dshPackageDir = .../@deepseek-ai/dsh
- *   -> scopeDir      = .../@deepseek-ai
- *   -> target        = .../node_modules
- */
-function resolveTargetModules(harnessEntry: string): string {
-  const dshPackageDir = dirname(dirname(harnessEntry));
-  const scopeDir = dirname(dshPackageDir);
-  const target = dirname(scopeDir);
-  if (basename(target) !== "node_modules") {
-    throw new Error(`unexpected harness layout: ${target}`);
-  }
-  return target;
-}
-
 function npmCliPath(): string {
   return join(process.resourcesPath, "runtime", "npm", "bin", "npm-cli.js");
 }
@@ -100,6 +65,8 @@ function npmCliPath(): string {
  * atomically swap it over `resources/harness/node_modules`.
  * The old copy is NOT deleted here — the caller keeps it until the new
  * version passes its readiness check, then calls commit() (or rollback()).
+ * The swapped-in tree is re-pruned so an online update does not bring back
+ * sources/maps/docs that the initial package stripped.
  * Caller must have stopped the harness before invoking.
  */
 export async function installHarnessUpdate(
@@ -160,6 +127,12 @@ export async function installHarnessUpdate(
     throw err;
   }
   rmSync(tmpPrefix, { recursive: true, force: true });
+  try {
+    const pruned = await pruneHarness(dirname(targetModules));
+    log(`harness pruned after update: ${pruned.files} files, ${pruned.dirs} dirs`);
+  } catch (err) {
+    log(`harness prune after update failed: ${String(err)}`);
+  }
   log("harness update installed (old copy kept until ready)");
   return {
     targetModules,
