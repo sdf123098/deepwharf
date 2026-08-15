@@ -4,6 +4,7 @@ contextBridge.exposeInMainWorld("shellApi", {
   locale: () => ipcRenderer.invoke("shell:locale"),
   openStore: () => ipcRenderer.invoke("shell:openStore"),
   openSettings: () => ipcRenderer.invoke("shell:openSettings"),
+  openHarnessSettings: () => ipcRenderer.invoke("shell:openHarnessSettings"),
   checkHarness: () => ipcRenderer.invoke("shell:checkHarness"),
   checkShell: () => ipcRenderer.invoke("shell:checkShell"),
   versions: () => ipcRenderer.invoke("shell:versions"),

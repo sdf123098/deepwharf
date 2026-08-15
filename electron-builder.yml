@@ -22,6 +22,8 @@ files:
   - resources/plugin-store.js
   - resources/settings.html
   - resources/settings.js
+  - resources/harness-settings.html
+  - resources/harness-settings.js
 
 # Phase 4/5: embedded Node runtime goes outside the ASAR.
 # The Harness ships as ONE archive (harness.zip) so the installer copies a few

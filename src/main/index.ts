@@ -24,6 +24,7 @@ import { semverGt } from "./pure";
 import { t, localeForRenderer } from "./i18n";
 import { openPluginStore, registerPluginStoreIpc, type PluginStoreContext } from "./plugin-store";
 import { readSettings, writeSettings, updateSettings, sanitizeSettingsPatch } from "./settings";
+import { openHarnessSettingsWindow, registerHarnessSettingsIpc } from "./harness-settings";
 
 let splash: BrowserWindow | null = null;
 let mainWindow: BrowserWindow | null = null;
@@ -100,6 +101,14 @@ async function bootstrap(): Promise<void> {
       dshHome: paths.dshHome,
       log: (m) => log.log(m),
     } satisfies PluginStoreContext,
+    onRestartHarness,
+  );
+
+  registerHarnessSettingsIpc(
+    {
+      getPort: () => currentHarnessPort,
+      log: (m) => log.log(m),
+    },
     onRestartHarness,
   );
 
@@ -237,6 +246,16 @@ async function launch(): Promise<void> {
     }
     if (process.env.DSH_TEST_SETTINGS) {
       setTimeout(() => openSettingsWindow(), 2000);
+    }
+    if (process.env.DSH_TEST_HARNESS_SETTINGS) {
+      setTimeout(
+        () =>
+          openHarnessSettingsWindow(
+            join(__dirname, "preload-harness-settings.js"),
+            localeForRenderer(),
+          ),
+        2000,
+      );
     }
     if (process.env.DSH_TEST_EXIT) {
       setTimeout(() => app.quit(), 8000);
@@ -560,6 +579,13 @@ function registerShellIpc(): void {
   ipcMain.handle("shell:openSettings", (e) => {
     assertShellSender(e);
     return openSettingsWindow();
+  });
+  ipcMain.handle("shell:openHarnessSettings", (e) => {
+    assertShellSender(e);
+    return openHarnessSettingsWindow(
+      join(__dirname, "preload-harness-settings.js"),
+      localeForRenderer(),
+    );
   });
   ipcMain.handle("shell:checkHarness", (e) => {
     assertShellSender(e);
