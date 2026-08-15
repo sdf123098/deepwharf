@@ -45,6 +45,31 @@ export function writeSettings(s: DesktopSettings): void {
   }
 }
 
+const THEMES = ["auto", "light", "dark"] as const;
+const LANGUAGES = ["auto", "zh-CN", "en-US"] as const;
+
+/**
+ * IPC is a runtime boundary: only accept the fields DesktopSettings knows,
+ * each with the right type. Unknown fields and bad values are dropped.
+ */
+export function sanitizeSettingsPatch(input: unknown): Partial<DesktopSettings> {
+  if (!input || typeof input !== "object") return {};
+  const o = input as Record<string, unknown>;
+  const patch: Partial<DesktopSettings> = {};
+  if (typeof o.autoCheckUpdates === "boolean") patch.autoCheckUpdates = o.autoCheckUpdates;
+  if (typeof o.autoCheckShell === "boolean") patch.autoCheckShell = o.autoCheckShell;
+  if (typeof o.devtoolsOnStart === "boolean") patch.devtoolsOnStart = o.devtoolsOnStart;
+  if (typeof o.lastUpdateCheck === "number") patch.lastUpdateCheck = o.lastUpdateCheck;
+  if (typeof o.lastShellCheck === "number") patch.lastShellCheck = o.lastShellCheck;
+  if (typeof o.language === "string" && (LANGUAGES as readonly string[]).includes(o.language)) {
+    patch.language = o.language as DesktopSettings["language"];
+  }
+  if (typeof o.theme === "string" && (THEMES as readonly string[]).includes(o.theme)) {
+    patch.theme = o.theme as DesktopSettings["theme"];
+  }
+  return patch;
+}
+
 export function updateSettings(patch: Partial<DesktopSettings>): DesktopSettings {
   const next = { ...readSettings(), ...patch };
   writeSettings(next);

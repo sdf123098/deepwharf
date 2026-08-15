@@ -107,7 +107,12 @@ export function createSettingsWindow(preloadPath: string, lang: string): Browser
 
 export function openExternalFromWebContents(wc: Electron.WebContents): void {
   wc.setWindowOpenHandler(({ url }) => {
-    if (/^https?:/i.test(url)) shell.openExternal(url);
+    try {
+      const u = new URL(url);
+      if (u.protocol === "https:") void shell.openExternal(url);
+    } catch {
+      // invalid URL — deny
+    }
     return { action: "deny" };
   });
 }

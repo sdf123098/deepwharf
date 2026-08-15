@@ -18,5 +18,13 @@ document.getElementById("btnSettings").textContent = S.settings;
 const wv = document.getElementById("harness");
 wv.setAttribute("src", `http://127.0.0.1:${PORT}/`);
 
+// Harness restarts on a fresh port: repoint the webview there instead of
+// replacing the shell page (the shell must outlive harness restarts).
+window.shellApi.onHarnessPort((port) => {
+  if (Number.isInteger(port) && port > 0) {
+    wv.setAttribute("src", `http://127.0.0.1:${port}/`);
+  }
+});
+
 document.getElementById("btnStore").addEventListener("click", () => window.shellApi.openStore());
 document.getElementById("btnSettings").addEventListener("click", () => window.shellApi.openSettings());

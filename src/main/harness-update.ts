@@ -1,6 +1,6 @@
 import { spawn } from "node:child_process";
 import { existsSync, readFileSync, renameSync, rmSync, mkdirSync } from "node:fs";
-import { join, dirname } from "node:path";
+import { join, dirname, basename } from "node:path";
 import { app } from "electron";
 
 // Update source. registry.npmjs.org is unreachable from this network, so the
@@ -13,6 +13,20 @@ export interface UpdateCheck {
   current: string | null;
   latest: string | null;
   updateAvailable: boolean;
+}
+
+/**
+ * Result of a staged harness swap. The old copy is kept at `backup` until the
+ * caller has verified the new version starts; only then should commit() be
+ * called. rollback() restores the previous version over a broken new one.
+ */
+export interface HarnessUpdateTransaction {
+  targetModules: string;
+  backup: string;
+  /** New version verified ready: drop the old copy. */
+  commit: () => void;
+  /** Restore the previous version over a broken new one. */
+  rollback: () => void;
 }
 
 export function currentHarnessVersion(harnessEntry: string): string | null {
@@ -58,6 +72,25 @@ export async function checkForUpdate(harnessEntry: string): Promise<UpdateCheck>
   };
 }
 
+/**
+ * Resolve `resources/harness/node_modules` from the dsh entry point and assert
+ * the layout matches what the updater expects before touching anything.
+ *
+ * harnessEntry = .../harness/node_modules/@deepseek-ai/dsh/lib/bin.js
+ *   -> dshPackageDir = .../@deepseek-ai/dsh
+ *   -> scopeDir      = .../@deepseek-ai
+ *   -> target        = .../node_modules
+ */
+function resolveTargetModules(harnessEntry: string): string {
+  const dshPackageDir = dirname(dirname(harnessEntry));
+  const scopeDir = dirname(dshPackageDir);
+  const target = dirname(scopeDir);
+  if (basename(target) !== "node_modules") {
+    throw new Error(`unexpected harness layout: ${target}`);
+  }
+  return target;
+}
+
 function npmCliPath(): string {
   return join(process.resourcesPath, "runtime", "npm", "bin", "npm-cli.js");
 }
@@ -65,6 +98,8 @@ function npmCliPath(): string {
 /**
  * Download + install the new harness into a temp prefix (bundled npm), then
  * atomically swap it over `resources/harness/node_modules`.
+ * The old copy is NOT deleted here — the caller keeps it until the new
+ * version passes its readiness check, then calls commit() (or rollback()).
  * Caller must have stopped the harness before invoking.
  */
 export async function installHarnessUpdate(
@@ -72,7 +107,7 @@ export async function installHarnessUpdate(
   harnessEntry: string,
   version: string,
   log: (msg: string) => void,
-): Promise<void> {
+): Promise<HarnessUpdateTransaction> {
   const tmpPrefix = join(app.getPath("userData"), "harness-update");
   rmSync(tmpPrefix, { recursive: true, force: true });
   mkdirSync(tmpPrefix, { recursive: true });
@@ -109,8 +144,10 @@ export async function installHarnessUpdate(
     throw new Error("update produced no harness entry");
   }
 
-  // resources/harness/node_modules
-  const targetModules = join(dirname(dirname(dirname(harnessEntry))), "node_modules");
+  const targetModules = resolveTargetModules(harnessEntry);
+  if (!existsSync(targetModules)) {
+    throw new Error(`harness node_modules not found at ${targetModules}`);
+  }
   const backup = targetModules + ".old";
   log(`swap ${targetModules}`);
   rmSync(backup, { recursive: true, force: true });
@@ -118,11 +155,19 @@ export async function installHarnessUpdate(
   try {
     renameSync(newModules, targetModules);
   } catch (err) {
-    // restore on failure
+    // restore on swap failure
     renameSync(backup, targetModules);
     throw err;
   }
-  rmSync(backup, { recursive: true, force: true });
   rmSync(tmpPrefix, { recursive: true, force: true });
-  log("harness update installed");
+  log("harness update installed (old copy kept until ready)");
+  return {
+    targetModules,
+    backup,
+    commit: () => rmSync(backup, { recursive: true, force: true }),
+    rollback: () => {
+      rmSync(targetModules, { recursive: true, force: true });
+      if (existsSync(backup)) renameSync(backup, targetModules);
+    },
+  };
 }

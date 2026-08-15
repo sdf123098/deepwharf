@@ -15,6 +15,20 @@ export interface HarnessOptions {
   harnessLog: string;
 }
 
+export interface HarnessExitInfo {
+  code: number | null;
+  signal: NodeJS.Signals | null;
+  /** True when stop() requested the shutdown — must not be treated as a crash. */
+  expected: boolean;
+}
+
+/**
+ * Stable marker served by the Harness WebUI root document. The readiness probe
+ * only accepts a response that actually looks like the Harness (instead of
+ * "any HTTP server that happens to be on the port").
+ */
+const HARNESS_HTML_MARKER = "DeepSeek Harness";
+
 const delay = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
 /**
@@ -25,6 +39,7 @@ export class HarnessProcessManager extends EventEmitter {
   private child: ChildProcessWithoutNullStreams | null = null;
   private spawnError: string | null = null;
   private lastPid: number | null = null;
+  private stopping = false;
   private _port = 0;
 
   get port(): number {
@@ -38,6 +53,7 @@ export class HarnessProcessManager extends EventEmitter {
   start(opts: HarnessOptions): void {
     this._port = opts.port;
     this.spawnError = null;
+    this.stopping = false;
     mkdirSync(dirname(opts.harnessLog), { recursive: true });
 
     const child = spawn(
@@ -65,12 +81,15 @@ export class HarnessProcessManager extends EventEmitter {
       this.emit("log", `spawn error: ${err.message}\n`);
     });
     child.on("exit", (code, signal) => {
+      const expected = this.stopping;
       this.child = null;
-      this.emit("exit", code, signal);
+      this.lastPid = null;
+      this.stopping = false;
+      this.emit("exit", { code, signal, expected } satisfies HarnessExitInfo);
     });
   }
 
-  /** Poll the HTTP endpoint until the server responds (or the process dies). */
+  /** Poll the Harness WebUI until it serves its real page (or the process dies). */
   async waitForReady(timeoutMs = 120_000): Promise<void> {
     const started = Date.now();
     const port = this._port;
@@ -85,9 +104,12 @@ export class HarnessProcessManager extends EventEmitter {
         const res = await fetch(`http://127.0.0.1:${port}/`, {
           signal: AbortSignal.timeout(1500),
         });
-        if (res.status < 500) return; // any HTTP response means the server is up
+        if (res.ok) {
+          const body = await res.text();
+          if (body.includes(HARNESS_HTML_MARKER)) return;
+        }
       } catch {
-        // connection refused / timeout -> not ready yet
+        // connection refused / timeout / wrong content -> not ready yet
       }
       await delay(500);
     }
@@ -97,12 +119,15 @@ export class HarnessProcessManager extends EventEmitter {
   /**
    * Graceful shutdown: ask the child to exit, then force-kill the whole
    * process tree on Windows so no node.exe / pwsh / agent processes linger.
+   * The subsequent exit event is marked `expected` and must not be treated as
+   * a crash by the caller.
    */
   async stop(): Promise<void> {
     const child = this.child;
     const pid = this.lastPid;
     if (!child && pid === null) return;
 
+    this.stopping = true;
     if (child && pid) {
       child.kill(); // SIGTERM on Windows = TerminateProcess, but try it first
       await Promise.race([
@@ -114,6 +139,7 @@ export class HarnessProcessManager extends EventEmitter {
       this.killTree(pid as number);
     }
     this.child = null;
+    this.lastPid = null;
   }
 
   /** Synchronous tree kill — safe to call from process 'exit'. */
@@ -124,6 +150,7 @@ export class HarnessProcessManager extends EventEmitter {
   }
 
   private killTree(pid: number): void {
+    if (!Number.isInteger(pid) || pid <= 0) return;
     try {
       spawnSync("taskkill", ["/pid", String(pid), "/t", "/f"], {
         windowsHide: true,

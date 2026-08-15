@@ -16,6 +16,8 @@ const I18N = {
     empty: "没有找到插件。换个关键词试试。",
     loading: "加载中…",
     count: "共 {n} 个插件",
+    tagPlugin: "DSH 插件",
+    tagNotPlugin: "非 Harness 插件",
     footer: "数据源：npm registry（DeepSeek Harness 插件生态，GitHub dsh-plugin 主题）",
   },
   "en-US": {
@@ -31,6 +33,8 @@ const I18N = {
     empty: "No plugins found. Try another keyword.",
     loading: "Loading…",
     count: "{n} plugins",
+    tagPlugin: "DSH plugin",
+    tagNotPlugin: "Not a Harness plugin",
     footer: "Source: npm registry (DeepSeek Harness plugin ecosystem, GitHub dsh-plugin topic)",
   },
 };
@@ -76,8 +80,11 @@ function render(plugins) {
           ${p.repository ? `<a href="#" data-url="${esc(p.repository)}">↗</a>` : ""}</div>
       </div>
       <div class="actions">
+        <span class="tag ${p.dshBundle ? "ok" : "warn"}">${
+          p.dshBundle ? esc(S.tagPlugin) : esc(S.tagNotPlugin)
+        }</span>
         <button data-pkg="${esc(p.name)}" class="${installed.has(p.name) ? "done" : ""}"
-          ${installed.has(p.name) ? "disabled" : ""}>${
+          ${installed.has(p.name) || !p.dshBundle ? "disabled" : ""}>${
             installed.has(p.name) ? esc(S.installed) : esc(S.install)
           }</button>
       </div>
@@ -103,7 +110,8 @@ listEl.addEventListener("click", async (e) => {
   const repo = e.target.closest("a[data-url]");
   if (repo) {
     e.preventDefault();
-    window.open(repo.dataset.url, "_blank");
+    // Main validates the URL (https only) before handing it to the OS browser.
+    await window.pluginApi.openExternal(repo.dataset.url);
     return;
   }
   const btn = e.target.closest("button[data-pkg]");

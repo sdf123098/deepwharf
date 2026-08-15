@@ -7,4 +7,8 @@ contextBridge.exposeInMainWorld("shellApi", {
   checkHarness: () => ipcRenderer.invoke("shell:checkHarness"),
   checkShell: () => ipcRenderer.invoke("shell:checkShell"),
   versions: () => ipcRenderer.invoke("shell:versions"),
+  // Harness restarts on a fresh port; the shell page itself must stay alive.
+  onHarnessPort: (cb: (port: number) => void) => {
+    ipcRenderer.on("shell:harness-port", (_e, port: number) => cb(port));
+  },
 });

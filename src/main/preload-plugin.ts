@@ -9,4 +9,6 @@ contextBridge.exposeInMainWorld("pluginApi", {
   locale: () => ipcRenderer.invoke("plugin-store:locale"),
   onLocale: (cb: (l: string) => void) =>
     ipcRenderer.on("plugin-store:locale", (_e, l: string) => cb(l)),
+  // Registry-supplied repository links are validated (https only) by Main.
+  openExternal: (url: string) => ipcRenderer.invoke("plugin-store:openExternal", url),
 });

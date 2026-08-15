@@ -42,6 +42,8 @@ const zhCN = {
   btnUpdateNow: "立即更新",
   btnLater: "稍后",
   btnRetry: "重试",
+  harnessRestartFailed: "Harness 重启失败",
+  harnessRestartFailedDetail: "{error}",
 
   updateTitle: "Harness 更新可用",
   updateMessage: "发现新的 DeepSeek Harness：{from} → {to}",
@@ -129,6 +131,8 @@ const enUS: Record<keyof typeof zhCN, string> = {
   btnUpdateNow: "Update now",
   btnLater: "Later",
   btnRetry: "Retry",
+  harnessRestartFailed: "Harness restart failed",
+  harnessRestartFailedDetail: "{error}",
 
   updateTitle: "Harness update available",
   updateMessage: "A new DeepSeek Harness is available: {from} → {to}",

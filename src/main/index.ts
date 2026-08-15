@@ -2,7 +2,7 @@ import { app, BrowserWindow, dialog, shell, ipcMain, Menu, nativeTheme } from "e
 import { spawnSync } from "node:child_process";
 import { existsSync, mkdirSync } from "node:fs";
 import { join } from "node:path";
-import { HarnessProcessManager } from "./harness-process";
+import { HarnessProcessManager, type HarnessExitInfo } from "./harness-process";
 import { findFreePort } from "./port";
 import { resolvePaths, type ResolvedPaths } from "./paths";
 import { Logger } from "./log";
@@ -14,16 +14,16 @@ import {
   setSplashVersion,
   openExternalFromWebContents,
 } from "./window";
-import { checkForUpdate, installHarnessUpdate, currentHarnessVersion, semverGt } from "./harness-update";
+import {
+  checkForUpdate,
+  installHarnessUpdate,
+  currentHarnessVersion,
+  semverGt,
+  type HarnessUpdateTransaction,
+} from "./harness-update";
 import { t, localeForRenderer } from "./i18n";
 import { openPluginStore, registerPluginStoreIpc, type PluginStoreContext } from "./plugin-store";
-import {
-  readSettings,
-  writeSettings,
-  updateSettings,
-  effectiveLanguage,
-  type DesktopSettings,
-} from "./settings";
+import { readSettings, writeSettings, updateSettings, sanitizeSettingsPatch, effectiveLanguage } from "./settings";
 
 let splash: BrowserWindow | null = null;
 let mainWindow: BrowserWindow | null = null;
@@ -32,6 +32,9 @@ let log: Logger;
 let paths: ResolvedPaths;
 let quitting = false;
 let cleanedUp = false;
+let currentHarnessPort = 0;
+/** True while an update transaction owns the harness — crash UI is suppressed. */
+let suppressCrashDialog = false;
 
 function setStatus(status: string, detail = ""): void {
   if (splash) setSplashStatus(splash, status, detail);
@@ -49,7 +52,7 @@ if (!gotLock) {
       mainWindow.focus();
     }
   });
-  app.setAppUserModelId("com.deepseek.harness.desktop");
+  app.setAppUserModelId("com.deepwharf.desktop");
   app.whenReady().then(bootstrap);
 }
 
@@ -139,7 +142,7 @@ async function startHarness(): Promise<number> {
   setStatus(t("splashStartHarness"));
 
   harness = new HarnessProcessManager();
-  harness.on("exit", (code, signal) => onHarnessExit(code, signal));
+  harness.on("exit", (info: HarnessExitInfo) => onHarnessExit(info));
   harness.start({
     nodeExecutable: paths.nodeExecutable,
     harnessEntry: paths.harnessEntry,
@@ -149,25 +152,71 @@ async function startHarness(): Promise<number> {
   });
 
   await harness.waitForReady();
+  currentHarnessPort = port;
   log.log("harness ready on port", port);
   return port;
 }
 
-/** Full start sequence: harness ready -> main window. */
+/**
+ * Full start sequence: harness ready -> main window. Only used for first run;
+ * harness restarts must go through restartHarnessInPlace() so the shell stays up.
+ */
 async function launch(): Promise<void> {
   try {
     const port = await startHarness();
     setStatus(t("splashReady"));
 
-    mainWindow = createMainWindow(port, localeForRenderer());
-    mainWindow.on("closed", () => {
-      mainWindow = null;
+    const win = createMainWindow(port, localeForRenderer());
+    mainWindow = win;
+    win.on("closed", () => {
+      if (mainWindow === win) mainWindow = null;
     });
-    // External links from the embedded Harness webview open in the browser.
-    mainWindow.webContents.on("did-attach-webview", (_e, guest) =>
-      openExternalFromWebContents(guest),
-    );
-    mainWindow.webContents.once("did-finish-load", () => {
+
+    // The shell page is local and fixed; any <webview> attached to it must be
+    // locked to our own harness server (no preload, no node, sandboxed guest).
+    win.webContents.on("will-attach-webview", (_e, webPreferences, params) => {
+      delete webPreferences.preload;
+      webPreferences.nodeIntegration = false;
+      webPreferences.contextIsolation = true;
+      webPreferences.sandbox = true;
+      let u: URL;
+      try {
+        u = new URL(params.src);
+      } catch {
+        _e.preventDefault();
+        return;
+      }
+      const allowed =
+        u.protocol === "http:" &&
+        u.hostname === "127.0.0.1" &&
+        Number(u.port) === currentHarnessPort;
+      if (!allowed) _e.preventDefault();
+    });
+
+    // External links from the embedded Harness webview open in the browser, and
+    // the guest's main document stays on our own harness server.
+    win.webContents.on("did-attach-webview", (_e, guest) => {
+      openExternalFromWebContents(guest);
+      guest.on("will-navigate", (event, url) => {
+        let u: URL;
+        try {
+          u = new URL(url);
+        } catch {
+          event.preventDefault();
+          return;
+        }
+        const allowed =
+          u.protocol === "http:" &&
+          u.hostname === "127.0.0.1" &&
+          Number(u.port) === currentHarnessPort;
+        if (!allowed) {
+          event.preventDefault();
+          if (u.protocol === "https:") void shell.openExternal(url);
+        }
+      });
+    });
+
+    win.webContents.once("did-finish-load", () => {
       log.log("main window loaded");
       splash?.close();
       splash = null;
@@ -175,7 +224,7 @@ async function launch(): Promise<void> {
       void maybeCheckShellUpdate(false);
     });
     if (process.env.DSH_DEVTOOLS || readSettings().devtoolsOnStart) {
-      mainWindow.webContents.openDevTools({ mode: "detach" });
+      win.webContents.openDevTools({ mode: "detach" });
     }
 
     // Test hooks: open the plugin store, then quit a few seconds later so the
@@ -206,30 +255,65 @@ function fail(message: string, detail = ""): void {
   setStatus(t("splashFailed"), detail ? `${message}\n\nLogs: ${detail}` : message);
 }
 
-function onHarnessExit(code: number | null, signal: string | null): void {
-  log.log("harness exited: code", code, "signal", signal);
-  if (quitting || cleanedUp) return;
-  if (!mainWindow) return; // startup path — waitForReady() throws and fail() shows the error
+function onHarnessExit(info: HarnessExitInfo): void {
+  log.log("harness exited: code", info.code, "signal", info.signal, "expected", info.expected);
+  if (info.expected) return;
+  if (quitting || cleanedUp || suppressCrashDialog) return;
+  if (!mainWindow || mainWindow.isDestroyed()) return; // startup path — waitForReady() throws and fail() shows the error
 
   const choice = dialog.showMessageBoxSync(mainWindow, {
     type: "error",
     title: t("crashTitle"),
     message: t("crashMessage"),
     detail: t("crashDetail", {
-      code: String(code ?? "?"),
+      code: String(info.code ?? "?"),
       log: paths.harnessLog,
     }),
     buttons: [t("btnRestart"), t("btnViewLogs"), t("btnQuit")],
     defaultId: 0,
   });
   if (choice === 0) {
-    harness = null;
-    void launch();
+    void restartHarnessInPlace();
   } else if (choice === 1) {
     shell.openPath(paths.harnessLog);
   } else {
     app.quit();
   }
+}
+
+/** Stop the harness and start it again on a fresh port, keeping the shell alive. */
+async function restartHarnessInPlace(): Promise<void> {
+  try {
+    if (harness) {
+      await harness.stop(); // expected exit — no crash dialog
+      harness = null;
+    }
+    const port = await startHarness();
+    updateHarnessPort(port);
+  } catch (err) {
+    log.log("harness restart failed:", String(err));
+    if (mainWindow && !mainWindow.isDestroyed()) {
+      dialog.showMessageBox(mainWindow, {
+        type: "error",
+        title: t("harnessRestartFailed"),
+        message: t("harnessRestartFailedDetail", { error: String(err) }),
+      });
+    }
+  }
+}
+
+/** Point the shell's <webview> at the new harness port without touching the shell page. */
+function updateHarnessPort(port: number): void {
+  currentHarnessPort = port;
+  if (!mainWindow || mainWindow.isDestroyed()) return;
+  mainWindow.webContents.send("shell:harness-port", port);
+}
+
+/** Stop and drop the current harness manager (used inside update transactions). */
+async function stopHarnessQuietly(): Promise<void> {
+  const mgr = harness;
+  harness = null;
+  if (mgr) await mgr.stop();
 }
 
 // --- harness auto-update ----------------------------------------------------
@@ -279,15 +363,22 @@ async function maybeCheckForUpdate(force: boolean): Promise<void> {
   await applyHarnessUpdate(check.latest!);
 }
 
+/**
+ * Transactional update: the old version stays on disk until the new one
+ * becomes ready; any failure restores the old version and starts it.
+ */
 async function applyHarnessUpdate(version: string): Promise<void> {
+  suppressCrashDialog = true;
+  let tx: HarnessUpdateTransaction | null = null;
   try {
     log.log("applying harness update to", version);
-    await harness?.stop();
-    harness = null;
-    await installHarnessUpdate(paths.nodeExecutable, paths.harnessEntry, version, (m) => log.log(m));
-    const port = await startHarness();
-    if (mainWindow) mainWindow.loadURL(`http://127.0.0.1:${port}/`);
-    if (mainWindow) {
+    await stopHarnessQuietly();
+    tx = await installHarnessUpdate(paths.nodeExecutable, paths.harnessEntry, version, (m) => log.log(m));
+    const port = await startHarness(); // new version must become ready first
+    tx.commit();
+    tx = null;
+    updateHarnessPort(port);
+    if (mainWindow && !mainWindow.isDestroyed()) {
       dialog.showMessageBox(mainWindow, {
         type: "info",
         title: t("updatedTitle"),
@@ -296,19 +387,33 @@ async function applyHarnessUpdate(version: string): Promise<void> {
     }
   } catch (err) {
     log.log("harness update failed:", String(err));
-    if (mainWindow) {
+    try {
+      if (tx) {
+        // The swap happened but the new version never became ready:
+        // restore the previous version before starting anything.
+        await stopHarnessQuietly();
+        tx.rollback();
+        tx = null;
+      }
+      // Bring the on-disk (old, still-installed, or rolled-back) version back
+      // up. If a failure happened after commit the harness is already running
+      // (harness !== null) and must not be double-spawned.
+      if (!harness) {
+        const port = await startHarness();
+        updateHarnessPort(port);
+      }
+    } catch (restartErr) {
+      log.log("harness restart after failed update failed:", String(restartErr));
+    }
+    if (mainWindow && !mainWindow.isDestroyed()) {
       dialog.showMessageBox(mainWindow, {
         type: "error",
         title: t("updateFailedTitle"),
         message: t("updateFailedDetail", { error: String(err) }),
       });
     }
-    try {
-      const port = await startHarness();
-      if (mainWindow) mainWindow.loadURL(`http://127.0.0.1:${port}/`);
-    } catch {
-      // leave the crash dialog to handle it
-    }
+  } finally {
+    suppressCrashDialog = false;
   }
 }
 
@@ -317,12 +422,7 @@ async function applyHarnessUpdate(version: string): Promise<void> {
 /** Stop the harness and start it again on a fresh port (used by plugin store). */
 async function onRestartHarness(): Promise<void> {
   log.log("restarting harness");
-  await harness?.stop();
-  harness = null;
-  const port = await startHarness();
-  if (mainWindow && !mainWindow.isDestroyed()) {
-    mainWindow.loadURL(`http://127.0.0.1:${port}/`);
-  }
+  await restartHarnessInPlace();
 }
 
 // --- shell / settings IPC ---------------------------------------------------
@@ -409,30 +509,78 @@ async function maybeCheckShellUpdate(force: boolean): Promise<void> {
   await checkShellUpdate(force);
 }
 
+function assertShellSender(event: Electron.IpcMainInvokeEvent): void {
+  if (!mainWindow || mainWindow.isDestroyed() || event.sender !== mainWindow.webContents) {
+    throw new Error("unauthorized IPC sender");
+  }
+}
+
+function assertSettingsSender(event: Electron.IpcMainInvokeEvent): void {
+  if (!settingsWindow || settingsWindow.isDestroyed() || event.sender !== settingsWindow.webContents) {
+    throw new Error("unauthorized IPC sender");
+  }
+}
+
 function registerShellIpc(): void {
   const lang = () => localeForRenderer();
   // Top-bar shell actions
-  ipcMain.handle("shell:locale", lang);
-  ipcMain.handle("shell:openStore", () =>
-    openPluginStore(join(__dirname, "preload-plugin.js"), lang()),
-  );
-  ipcMain.handle("shell:openSettings", () => openSettingsWindow());
-  ipcMain.handle("shell:checkHarness", () => maybeCheckForUpdate(true));
-  ipcMain.handle("shell:checkShell", () => checkShellUpdate(true));
-  ipcMain.handle("shell:versions", () => getVersions());
+  ipcMain.handle("shell:locale", (e) => {
+    assertShellSender(e);
+    return lang();
+  });
+  ipcMain.handle("shell:openStore", (e) => {
+    assertShellSender(e);
+    return openPluginStore(join(__dirname, "preload-plugin.js"), lang());
+  });
+  ipcMain.handle("shell:openSettings", (e) => {
+    assertShellSender(e);
+    return openSettingsWindow();
+  });
+  ipcMain.handle("shell:checkHarness", (e) => {
+    assertShellSender(e);
+    return maybeCheckForUpdate(true);
+  });
+  ipcMain.handle("shell:checkShell", (e) => {
+    assertShellSender(e);
+    return checkShellUpdate(true);
+  });
+  ipcMain.handle("shell:versions", (e) => {
+    assertShellSender(e);
+    return getVersions();
+  });
 
   // Settings window
-  ipcMain.handle("settings:locale", lang);
-  ipcMain.handle("settings:get", () => readSettings());
-  ipcMain.handle("settings:set", (_e, patch: Partial<DesktopSettings>) => {
-    const next = updateSettings(patch);
-    if (patch.theme !== undefined) applyTheme();
+  ipcMain.handle("settings:locale", (e) => {
+    assertSettingsSender(e);
+    return lang();
+  });
+  ipcMain.handle("settings:get", (e) => {
+    assertSettingsSender(e);
+    return readSettings();
+  });
+  ipcMain.handle("settings:set", (e, patch: unknown) => {
+    assertSettingsSender(e);
+    const sanitized = sanitizeSettingsPatch(patch);
+    const next = updateSettings(sanitized);
+    if (sanitized.theme !== undefined) applyTheme();
     return next;
   });
-  ipcMain.handle("settings:openLogs", () => shell.openPath(paths.logsDir));
-  ipcMain.handle("settings:checkHarness", () => maybeCheckForUpdate(true));
-  ipcMain.handle("settings:checkShell", () => checkShellUpdate(true));
-  ipcMain.handle("settings:versions", () => getVersions());
+  ipcMain.handle("settings:openLogs", (e) => {
+    assertSettingsSender(e);
+    return shell.openPath(paths.logsDir);
+  });
+  ipcMain.handle("settings:checkHarness", (e) => {
+    assertSettingsSender(e);
+    return maybeCheckForUpdate(true);
+  });
+  ipcMain.handle("settings:checkShell", (e) => {
+    assertSettingsSender(e);
+    return checkShellUpdate(true);
+  });
+  ipcMain.handle("settings:versions", (e) => {
+    assertSettingsSender(e);
+    return getVersions();
+  });
 }
 
 // --- shutdown ---------------------------------------------------------------
