@@ -50,8 +50,9 @@ npm run dist               # build NSIS + Portable installers -> release/
 
 - Install speed: the Harness payload is pruned (sources/maps/docs stripped) and the NSIS package
   uses `compression: store` for fast on-disk extraction.
-- Code signing: not bundled. Set `CSC_LINK`/`CSC_KEY` (or `win.certificateFile`) and electron-builder
-  will sign automatically.
+- Code signing: pluggable hook `scripts/sign.js` (`DEEPMHARF_SIGN_MODE=test|pfx|sigpath|none`).
+  Release artifacts are built by GitHub Actions CI and will be signed via the SignPath
+  Foundation once approved. See [CODE_SIGNING.md](./CODE_SIGNING.md).
 - Shell self-update feed: set `SHELL_UPDATE_URL` to a JSON `{ "version": "x.y.z" }` to enable checks.
 
 ## License

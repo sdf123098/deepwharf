@@ -1,0 +1,139 @@
+# Release workflow: build -> (SignPath signing) -> publish GitHub Release
+
+# The embedded runtime is not committed (see .gitignore): CI re-downloads the
+# pinned Node/pnpm (with checksum verification) and the pinned Harness version
+# from build-versions.json, then builds and publishes the Windows artifacts.
+#
+# Signing:
+# - Before SignPath approval, releases are published UNSIGNED (a warning is
+#   printed). Add the SignPath secrets to enable signing:
+#     SIGNPATH_API_TOKEN, SIGNPATH_ORGANIZATION_ID,
+#     SIGNPATH_PROJECT_SLUG, SIGNPATH_SIGNING_POLICY_SLUG
+# - When the secrets exist, the installer and the portable exe are submitted
+#   to SignPath and the SIGNED artifacts are published.
+# - Note: after external signing the electron-builder blockmap/latest.yml are
+#   stale, so they are not attached here (the app does not use electron-updater
+#   yet). If electron-updater is adopted, switch to hook-based signing inside
+#   `npm run dist` instead (DEEPMHARF_SIGN_MODE=sigpath per file).
+
+name: release
+
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  actions: read
+
+jobs:
+  build-and-release:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Resolve pinned versions
+        id: versions
+        shell: pwsh
+        run: |
+          $v = Get-Content -Raw build-versions.json | ConvertFrom-Json
+          "node=$($v.node)" >> $env:GITHUB_OUTPUT
+          "harness=$($v.harness)" >> $env:GITHUB_OUTPUT
+          "version=$(node -p "require('./package.json').version")" >> $env:GITHUB_OUTPUT
+
+      - name: Prepare embedded Node runtime
+        run: node scripts/prepare-node.mjs ${{ steps.versions.outputs.node }}
+
+      - name: Prepare vendored Harness
+        run: node scripts/prepare-harness.mjs ${{ steps.versions.outputs.harness }}
+
+      - name: Pack harness.zip
+        run: node scripts/pack-harness.mjs
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Build Windows artifacts (unsigned)
+        run: npm run dist
+        env:
+          DEEPMHARF_SIGN_MODE: none
+
+      # --- SignPath Foundation (activate after approval by adding secrets) ---
+
+      - name: Upload installer for signing
+        id: upload-installer
+        if: ${{ secrets.SIGNPATH_API_TOKEN != '' }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: installer
+          path: release/DeepWharf-Setup-${{ steps.versions.outputs.version }}-x64.exe
+          if-no-files-found: error
+          archive: false
+
+      - name: Sign installer via SignPath
+        if: ${{ secrets.SIGNPATH_API_TOKEN != '' }}
+        uses: signpath/github-action-submit-signing-request@v2
+        with:
+          api-token: ${{ secrets.SIGNPATH_API_TOKEN }}
+          organization-id: ${{ secrets.SIGNPATH_ORGANIZATION_ID }}
+          project-slug: ${{ secrets.SIGNPATH_PROJECT_SLUG }}
+          signing-policy-slug: ${{ secrets.SIGNPATH_SIGNING_POLICY_SLUG }}
+          github-artifact-id: ${{ steps.upload-installer.outputs.artifact-id }}
+          wait-for-completion: true
+          output-artifact-directory: release-signed
+          skip-decompress: true
+
+      - name: Upload portable for signing
+        id: upload-portable
+        if: ${{ secrets.SIGNPATH_API_TOKEN != '' }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: portable
+          path: release/DeepWharf-Portable-${{ steps.versions.outputs.version }}-x64.exe
+          if-no-files-found: error
+          archive: false
+
+      - name: Sign portable via SignPath
+        if: ${{ secrets.SIGNPATH_API_TOKEN != '' }}
+        uses: signpath/github-action-submit-signing-request@v2
+        with:
+          api-token: ${{ secrets.SIGNPATH_API_TOKEN }}
+          organization-id: ${{ secrets.SIGNPATH_ORGANIZATION_ID }}
+          project-slug: ${{ secrets.SIGNPATH_PROJECT_SLUG }}
+          signing-policy-slug: ${{ secrets.SIGNPATH_SIGNING_POLICY_SLUG }}
+          github-artifact-id: ${{ steps.upload-portable.outputs.artifact-id }}
+          wait-for-completion: true
+          output-artifact-directory: release-signed
+          skip-decompress: true
+
+      - name: Collect release files
+        id: collect
+        shell: pwsh
+        run: |
+          $v = "${{ steps.versions.outputs.version }}"
+          $dir = "release-publish"
+          New-Item -ItemType Directory -Force $dir | Out-Null
+          $signed = Get-ChildItem -Recurse -File "release-signed" -ErrorAction SilentlyContinue
+          if ($signed) {
+            $signed | Copy-Item -Destination $dir -Force
+            Write-Output "Publishing SignPath-signed artifacts"
+          } else {
+            Copy-Item "release/DeepWharf-Setup-$v-x64.exe" $dir
+            Copy-Item "release/DeepWharf-Portable-$v-x64.exe" $dir
+            Write-Output "WARNING: no SignPath secrets configured — publishing UNSIGNED artifacts"
+          }
+          "dir=$dir" >> $env:GITHUB_OUTPUT
+
+      - name: Publish GitHub Release
+        shell: pwsh
+        run: |
+          $v = "${{ steps.versions.outputs.version }}"
+          gh release create "v$v" "${{ steps.collect.outputs.dir }}/*" --title "DeepWharf v$v" --generate-notes
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
