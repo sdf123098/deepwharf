@@ -23,6 +23,11 @@ on:
     tags: ["v*"]
   workflow_dispatch:
 
+# The validator rejects `secrets` in step-level `if` ("Unrecognized named-value:
+# 'secrets'"); hoisting the check into workflow env is the documented pattern.
+env:
+  HAS_SIGNPATH: ${{ secrets.SIGNPATH_API_TOKEN != '' }}
+
 permissions:
   contents: write
   actions: read
@@ -31,9 +36,9 @@ jobs:
   build-and-release:
     runs-on: windows-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
 
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v5
         with:
           node-version: 22
           cache: npm
@@ -73,7 +78,7 @@ jobs:
 
       - name: Upload installer for signing
         id: upload-installer
-        if: ${{ secrets.SIGNPATH_API_TOKEN != '' }}
+        if: env.HAS_SIGNPATH == 'true'
         uses: actions/upload-artifact@v4
         with:
           name: installer
@@ -82,7 +87,7 @@ jobs:
           archive: false
 
       - name: Sign installer via SignPath
-        if: ${{ secrets.SIGNPATH_API_TOKEN != '' }}
+        if: env.HAS_SIGNPATH == 'true'
         uses: signpath/github-action-submit-signing-request@v2
         with:
           api-token: ${{ secrets.SIGNPATH_API_TOKEN }}
@@ -96,7 +101,7 @@ jobs:
 
       - name: Upload portable for signing
         id: upload-portable
-        if: ${{ secrets.SIGNPATH_API_TOKEN != '' }}
+        if: env.HAS_SIGNPATH == 'true'
         uses: actions/upload-artifact@v4
         with:
           name: portable
@@ -105,7 +110,7 @@ jobs:
           archive: false
 
       - name: Sign portable via SignPath
-        if: ${{ secrets.SIGNPATH_API_TOKEN != '' }}
+        if: env.HAS_SIGNPATH == 'true'
         uses: signpath/github-action-submit-signing-request@v2
         with:
           api-token: ${{ secrets.SIGNPATH_API_TOKEN }}
@@ -139,6 +144,10 @@ jobs:
         shell: pwsh
         run: |
           $v = "${{ steps.versions.outputs.version }}"
-          gh release create "v$v" "${{ steps.collect.outputs.dir }}/*" --title "DeepWharf v$v" --generate-notes
+          $args = @("release", "create", "v$v", "${{ steps.collect.outputs.dir }}/*",
+                    "--title", "DeepWharf v$v", "--generate-notes")
+          # a re-run must not die on the existing release: fall back to
+          # refreshing its assets instead
+          gh @args || gh release upload "v$v" "${{ steps.collect.outputs.dir }}/*" --clobber
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
