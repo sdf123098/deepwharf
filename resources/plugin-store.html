@@ -3,6 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:">
+<script src="shell-theme.js"></script>
 <title>Plugin Store</title>
 <style>
   :root { --bg:#0d1117; --panel:#161b22; --border:#21262d; --text:#e6edf3; --muted:#8b949e;
@@ -32,6 +33,11 @@
   button.icon svg { display:block; }
   main { padding:14px 18px; overflow-y:auto; height:calc(100% - 62px); }
   .meta { color:var(--muted); font-size:12px; margin-bottom:12px; }
+  .direct { display:flex; gap:8px; margin-bottom:12px; }
+  .direct input { flex:1; background:var(--bg); border:1px solid var(--border); color:var(--text);
+    border-radius:6px; padding:7px 12px; outline:none; font-size:13px; font-family: ui-monospace, Consolas, monospace; }
+  .direct input:focus { border-color:var(--accent); }
+  .direct button { background:transparent; color:var(--accent); border:1px solid var(--accent); white-space:nowrap; }
   .progress { background:var(--panel); border:1px solid var(--border); border-radius:8px;
     padding:8px 12px; margin-bottom:12px; font-family: ui-monospace, Consolas, monospace;
     font-size:11px; color:var(--muted); max-height:140px; overflow-y:auto; white-space:pre-wrap;
@@ -69,6 +75,10 @@
   </div>
 </header>
 <main>
+  <div class="direct">
+    <input id="directSpec" type="text" placeholder="">
+    <button id="directBtn" type="button"></button>
+  </div>
   <div class="meta" id="meta"></div>
   <div class="progress" id="progress" hidden></div>
   <div id="list"></div>

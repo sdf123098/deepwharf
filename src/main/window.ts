@@ -2,11 +2,16 @@ import { BrowserWindow, screen, shell, nativeTheme } from "electron";
 import { join } from "node:path";
 import { readSettings, updateSettings } from "./settings";
 import { sanitizeWindowBounds } from "./pure";
+import { themePayload, themeQuery } from "./theme";
 
-function overlayColors() {
-  return nativeTheme.shouldUseDarkColors
-    ? { color: "#0d1117", symbolColor: "#e6edf3" }
-    : { color: "#ffffff", symbolColor: "#1a1f28" };
+/** Title-bar overlay colors come from the active shell theme. */
+export function applyTitleBarOverlay(win: BrowserWindow): void {
+  const theme = themePayload();
+  try {
+    win.setTitleBarOverlay({ color: theme.colors.bg, symbolColor: theme.colors.text, height: 40 });
+  } catch {
+    // not supported on this platform
+  }
 }
 
 // --- window geometry memory ---------------------------------------------------
@@ -74,14 +79,6 @@ export function trackWindowBounds(id: string, win: BrowserWindow): void {
   });
 }
 
-export function applyTitleBarOverlay(win: BrowserWindow): void {
-  try {
-    win.setTitleBarOverlay({ ...overlayColors(), height: 40 });
-  } catch {
-    // not supported on this platform
-  }
-}
-
 export function createSplashWindow(): BrowserWindow {
   const win = new BrowserWindow({
     width: 480,
@@ -89,10 +86,12 @@ export function createSplashWindow(): BrowserWindow {
     frame: false,
     resizable: false,
     show: false,
-    backgroundColor: nativeTheme.shouldUseDarkColors ? "#0a0e1a" : "#f5f7fb",
+    backgroundColor: themePayload().colors.bg,
     webPreferences: { nodeIntegration: false, contextIsolation: true, sandbox: true },
   });
-  win.loadFile(join(__dirname, "../../resources/splash.html"));
+  win.loadFile(join(__dirname, "../../resources/splash.html"), {
+    query: { ...themeQuery() },
+  });
   win.once("ready-to-show", () => win.show());
   return win;
 }
@@ -126,7 +125,7 @@ export function setSplashVersion(win: BrowserWindow, version: string): void {
  * Harness WebUI embedded in a <webview> below.
  */
 export function createMainWindow(port: number, lang: string): BrowserWindow {
-  const dark = nativeTheme.shouldUseDarkColors;
+  const theme = themePayload();
   const win = new BrowserWindow({
     width: 1400,
     height: 900,
@@ -135,8 +134,8 @@ export function createMainWindow(port: number, lang: string): BrowserWindow {
     minHeight: 700,
     show: false,
     titleBarStyle: "hidden",
-    titleBarOverlay: { ...overlayColors(), height: 40 },
-    backgroundColor: dark ? "#0d1117" : "#ffffff",
+    titleBarOverlay: { color: theme.colors.bg, symbolColor: theme.colors.text, height: 40 },
+    backgroundColor: theme.colors.bg,
     webPreferences: {
       preload: join(__dirname, "preload-shell.js"),
       nodeIntegration: false,
@@ -146,13 +145,14 @@ export function createMainWindow(port: number, lang: string): BrowserWindow {
     },
   });
   trackWindowBounds("main", win);
-  // Keep the title-bar overlay in sync with the OS theme, and drop the
-  // listener when the window goes away so nativeTheme does not hold it.
+  // Keep the title-bar overlay in sync with theme changes (explicit and, for
+  // "auto", OS light/dark flips), and drop the listener when the window goes
+  // away so nativeTheme does not hold it.
   const onThemeUpdated = () => applyTitleBarOverlay(win);
   nativeTheme.on("updated", onThemeUpdated);
   win.on("closed", () => nativeTheme.removeListener("updated", onThemeUpdated));
   win.loadFile(join(__dirname, "../../resources/main-shell.html"), {
-    query: { port: String(port), lang },
+    query: { port: String(port), lang, ...themeQuery() },
   });
   win.once("ready-to-show", () => win.show());
   return win;
@@ -161,11 +161,11 @@ export function createMainWindow(port: number, lang: string): BrowserWindow {
 export function createSettingsWindow(preloadPath: string, lang: string): BrowserWindow {
   const win = new BrowserWindow({
     width: 640,
-    height: 620,
+    height: 740,
     ...rememberedWindowBounds("settings", { width: 520, height: 480 }),
     minWidth: 520,
     minHeight: 480,
-    backgroundColor: nativeTheme.shouldUseDarkColors ? "#0d1117" : "#ffffff",
+    backgroundColor: themePayload().colors.bg,
     title: "Settings",
     webPreferences: {
       preload: preloadPath,
@@ -176,7 +176,9 @@ export function createSettingsWindow(preloadPath: string, lang: string): Browser
   });
   trackWindowBounds("settings", win);
   win.setMenu(null); // no redundant menu bar
-  win.loadFile(join(__dirname, "../../resources/settings.html"), { query: { lang } });
+  win.loadFile(join(__dirname, "../../resources/settings.html"), {
+    query: { lang, ...themeQuery() },
+  });
   return win;
 }
 

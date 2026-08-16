@@ -40,7 +40,13 @@ interface RpcEnvelope {
   result?: { ok?: boolean; value?: unknown; error?: { code?: string; message?: string } };
 }
 
-/** One POST leg of the harness RPC: envelope in, envelope out, rpcId echoed. */
+/** One POST leg of the harness RPC: envelope in, envelope out, rpcId echoed.
+ * Exported for other main-process modules (event watcher baseline, future
+ * session/credential surfaces) — the wire contract lives here, single owner. */
+export async function harnessRpc(port: number, method: string, payload: unknown): Promise<unknown> {
+  return rpc(port, method, payload);
+}
+
 async function rpc(port: number, method: string, payload: unknown): Promise<unknown> {
   const rpcId = randomUUID();
   const res = await fetch(`http://127.0.0.1:${port}/api/${method}`, {

@@ -6,12 +6,15 @@ const PORT = params.get("port");
 const LANG = params.get("lang") || "en-US";
 
 const I18N = {
-  "zh-CN": { store: "插件商店", settings: "外壳设置", harnessSettings: "Harness 设置" },
-  "en-US": { store: "Plugin Store", settings: "Settings", harnessSettings: "Harness Settings" },
+  "zh-CN": { store: "插件商店", manager: "插件管理", settings: "外壳设置", harnessSettings: "Harness 设置", sessions: "会话", usage: "用量" },
+  "en-US": { store: "Plugin Store", manager: "Plugins", settings: "Settings", harnessSettings: "Harness Settings", sessions: "Sessions", usage: "Usage" },
 };
 const S = I18N[LANG] || I18N["en-US"];
 
+document.getElementById("btnSessions").textContent = S.sessions;
+document.getElementById("btnUsage").textContent = S.usage;
 document.getElementById("btnStore").textContent = S.store;
+document.getElementById("btnPluginManager").textContent = S.manager;
 document.getElementById("btnSettings").textContent = S.settings;
 document.getElementById("btnHarnessSettings").textContent = S.harnessSettings;
 
@@ -27,6 +30,9 @@ window.shellApi.onHarnessPort((port) => {
   }
 });
 
+document.getElementById("btnSessions").addEventListener("click", () => window.shellApi.openSessions());
+document.getElementById("btnUsage").addEventListener("click", () => window.shellApi.openUsage());
 document.getElementById("btnStore").addEventListener("click", () => window.shellApi.openStore());
+document.getElementById("btnPluginManager").addEventListener("click", () => window.shellApi.openPluginManager());
 document.getElementById("btnSettings").addEventListener("click", () => window.shellApi.openSettings());
 document.getElementById("btnHarnessSettings").addEventListener("click", () => window.shellApi.openHarnessSettings());

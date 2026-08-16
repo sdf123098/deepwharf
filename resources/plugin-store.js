@@ -27,7 +27,9 @@ const I18N = {
     srcNpmjs: "npm 官方",
     srcAwesome: "社区精选（awesome-dsh-plugin）",
     srcGithub: "GitHub 社区（dsh-plugin）",
-    footer: "可切换 npm registry、社区精选列表与 GitHub 主题源；仅声明 dsh.bundle 的包可安装。",
+    directPlaceholder: "直接安装：npm 包名 / owner/repo / github:owner/repo / 任意 pnpm spec",
+    directInstall: "安装",
+    footer: "npm 源仅列出声明 dsh.bundle 的包；GitHub / 社区源与上方输入框可安装任意 spec（与原版 dsh plugin 一致，装完重启生效）。",
   },
   "en-US": {
     title: "Plugin Store",
@@ -53,7 +55,9 @@ const I18N = {
     srcNpmjs: "npm official",
     srcAwesome: "Community curated (awesome-dsh-plugin)",
     srcGithub: "GitHub community (dsh-plugin)",
-    footer: "Switch between npm registries, the curated community list and the GitHub topic; only packages declaring dsh.bundle are installable.",
+    directPlaceholder: "Install directly: npm name / owner/repo / github:owner/repo / any pnpm spec",
+    directInstall: "Install",
+    footer: "npm sources list only dsh.bundle packages; GitHub/curated sources and the input above install any spec (same as the official dsh plugin) — restart to activate.",
   },
 };
 const S = I18N[LANG] || I18N["en-US"];
@@ -64,6 +68,8 @@ document.getElementById("searchBtn").title = S.search;
 document.getElementById("searchBtn").setAttribute("aria-label", S.search);
 document.getElementById("q").placeholder = S.placeholder;
 document.getElementById("footer").textContent = S.footer;
+document.getElementById("directSpec").placeholder = S.directPlaceholder;
+document.getElementById("directBtn").textContent = S.directInstall;
 
 const listEl = document.getElementById("list");
 const metaEl = document.getElementById("meta");
@@ -107,15 +113,22 @@ function render(plugins) {
   metaEl.textContent = S.count.replace("{n}", String(plugins.length));
   listEl.innerHTML = plugins
     .map((p) => {
-      const tag = p.installable
-        ? `<span class="tag ${p.dshBundle ? "ok" : "warn"}">${
-            p.dshBundle ? esc(S.tagPlugin) : esc(S.tagNotPlugin)
-          }</span>`
-        : `<span class="tag warn">${esc(p.category || S.tagRepo)}</span>`;
-      const action = p.installable
-        ? `<button data-pkg="${esc(p.name)}" class="${installed.has(p.name) ? "done" : ""}"
-             ${installed.has(p.name) || !p.dshBundle ? "disabled" : ""}>${
-               installed.has(p.name) ? esc(S.installed) : esc(S.install)
+      const isGithub = (p.installSpec || "").startsWith("github:");
+      // GitHub installs land under the repo's package name (owner/repo tail).
+      const installedName = isGithub ? p.name.split("/").pop() : p.name;
+      const tag = isGithub
+        ? `<span class="tag warn">${esc(p.category || S.tagRepo)}</span>`
+        : p.installable
+          ? `<span class="tag ${p.dshBundle ? "ok" : "warn"}">${
+              p.dshBundle ? esc(S.tagPlugin) : esc(S.tagNotPlugin)
+            }</span>`
+          : `<span class="tag warn">${esc(p.category || S.tagRepo)}</span>`;
+      // npm rows stay bundle-gated (search quality); github rows install as-is.
+      const canInstall = isGithub || (p.installable && p.dshBundle);
+      const action = canInstall
+        ? `<button data-spec="${esc(p.installSpec || p.name)}" class="${installed.has(installedName) ? "done" : ""}"
+             ${installed.has(installedName) ? "disabled" : ""}>${
+               installed.has(installedName) ? esc(S.installed) : esc(S.install)
              }</button>`
         : `<button class="ghost" data-repo="${esc(p.repository)}">${esc(S.openRepo)}</button>`;
       return `
@@ -170,18 +183,18 @@ listEl.addEventListener("click", async (e) => {
     await window.pluginApi.openExternal(repoBtn.dataset.repo);
     return;
   }
-  const btn = e.target.closest("button[data-pkg]");
+  const btn = e.target.closest("button[data-spec]");
   if (!btn || btn.disabled) return;
-  const pkg = btn.dataset.pkg;
+  const spec = btn.dataset.spec;
   btn.disabled = true;
   btn.textContent = S.installing;
   clearProgress();
   progressEl.hidden = false;
   try {
-    await window.pluginApi.install(pkg, currentSource?.registry);
+    await window.pluginApi.install(spec, currentSource?.registry ?? "", { manual: false });
     clearProgress();
     btn.textContent = S.installed;
-    installed.add(pkg);
+    await refreshInstalled();
     if (confirm(S.restartActivate)) {
       await window.pluginApi.restart();
     }
@@ -191,6 +204,34 @@ listEl.addEventListener("click", async (e) => {
     btn.textContent = S.install;
     alert(S.error + err.message);
   }
+});
+
+// Free-form install: anything the official `dsh plugin add` accepts.
+document.getElementById("directBtn").addEventListener("click", async () => {
+  const input = document.getElementById("directSpec");
+  const spec = input.value.trim();
+  if (!spec) return;
+  const btn = document.getElementById("directBtn");
+  btn.disabled = true;
+  clearProgress();
+  progressEl.hidden = false;
+  try {
+    await window.pluginApi.install(spec, currentSource?.registry ?? "", { manual: true });
+    clearProgress();
+    input.value = "";
+    await refreshInstalled();
+    if (confirm(S.restartActivate)) {
+      await window.pluginApi.restart();
+    }
+  } catch (err) {
+    clearProgress();
+    alert(S.error + err.message);
+  } finally {
+    btn.disabled = false;
+  }
+});
+document.getElementById("directSpec").addEventListener("keydown", (e) => {
+  if (e.key === "Enter") document.getElementById("directBtn").click();
 });
 
 // Live install/download progress from the main process (bounded tail).

@@ -1,0 +1,49 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta http-equiv="Content-Security-Policy" content="default-src 'self'; style-src 'unsafe-inline'; script-src 'self'">
+<script src="shell-theme.js"></script>
+<style>
+  :root { --bg:#0d1117; --panel:#161b22; --border:#21262d; --text:#e6edf3; --muted:#8b949e;
+          --accent:#4f8cff; --ok:#3fb950; }
+  @media (prefers-color-scheme: light) {
+    :root { --bg:#ffffff; --panel:#f6f8fa; --border:#d0d7de; --text:#1f2328; --muted:#57606a;
+            --accent:#0969da; --ok:#1a7f37; }
+  }
+  * { box-sizing: border-box; }
+  html, body { margin:0; height:100%; background:var(--bg); color:var(--text);
+    font-family: system-ui, "Segoe UI", "Microsoft YaHei", sans-serif; font-size:14px; }
+  main { padding: 18px 22px; overflow-y:auto; height:100%; }
+  h1 { font-size:16px; margin:0 0 6px; font-weight:600; }
+  p.lead { color:var(--muted); font-size:12.5px; margin:0 0 14px; line-height:1.5; }
+  .cred { background:var(--panel); border:1px solid var(--border); border-radius:8px;
+    padding:11px 14px; margin-bottom:10px; }
+  .cred .name { font-size:13px; font-weight:600; margin-bottom:2px; }
+  .cred .ref { color:var(--muted); font-size:11px; font-family: ui-monospace, Consolas, monospace; }
+  .cred .ok { color:var(--ok); font-size:12.5px; }
+  input[type=password] { width:100%; margin-top:8px; background:var(--bg); color:var(--text);
+    border:1px solid var(--border); border-radius:6px; padding:7px 10px; font-size:13px; }
+  .actions { display:flex; justify-content:flex-end; gap:8px; margin-top:14px; }
+  button { background:var(--bg); color:var(--text); border:1px solid var(--border);
+    border-radius:6px; padding:7px 14px; font-size:13px; cursor:pointer; }
+  button.primary { background:var(--accent); border-color:var(--accent); color:#fff; }
+  button:disabled { opacity:.5; cursor:default; }
+  .msg { font-size:12.5px; margin-top:10px; min-height:16px; }
+  .msg.err { color:#f85149; } .msg.ok { color:var(--ok); }
+</style>
+</head>
+<body>
+<main>
+  <h1 id="title">配置 API 密钥</h1>
+  <p class="lead" id="lead"></p>
+  <div id="creds"></div>
+  <div class="msg" id="msg"></div>
+  <div class="actions">
+    <button id="skip"></button>
+    <button id="save" class="primary"></button>
+  </div>
+</main>
+<script src="onboarding.js"></script>
+</body>
+</html>

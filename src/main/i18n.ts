@@ -46,6 +46,27 @@ const zhCN = {
   harnessRestartFailed: "Harness 重启失败",
   harnessRestartFailedDetail: "{error}",
 
+  trayTooltip: "DeepWharf — Harness 正在运行",
+  trayShow: "显示窗口",
+  trayBalloonTitle: "DeepWharf 仍在运行",
+  trayBalloonBody: "窗口已最小化到托盘，Harness 会话继续运行。点击托盘图标恢复窗口。",
+
+  notifyApprovalTitle: "需要你的批准",
+  notifyApprovalBody: "{tool} 请求执行权限",
+  notifyQuestionTitle: "Agent 在等你回答",
+  notifyQuestionBody: "会话有 {count} 个问题等待回答",
+  notifyDoneTitle: "会话已空闲",
+  notifyDoneBody: "DeepSeek Harness 任务已结束。",
+  notifyErrorTitle: "Agent 出错",
+  notifyErrorBody: "{message}",
+
+  sessionsExportTitle: "导出会话",
+
+  deeplinkTitle: "外部任务请求",
+  deeplinkMessage: "一个外部链接请求 DeepWharf 创建会话并发送以下提示词。确认发送？",
+  deeplinkSend: "发送",
+  deeplinkFailed: "任务发送失败：{error}",
+
   updateTitle: "Harness 更新可用",
   updateMessage: "发现新的 DeepSeek Harness：{from} → {to}",
   updateDetail: "更新将下载新运行时并重启 Harness。",
@@ -135,6 +156,28 @@ const enUS: Record<keyof typeof zhCN, string> = {
   btnDownload: "Download",
   harnessRestartFailed: "Harness restart failed",
   harnessRestartFailedDetail: "{error}",
+
+  trayTooltip: "DeepWharf — Harness running",
+  trayShow: "Show window",
+  trayBalloonTitle: "DeepWharf is still running",
+  trayBalloonBody:
+    "The window was minimized to the tray; your Harness session keeps running. Click the tray icon to restore it.",
+
+  notifyApprovalTitle: "Approval needed",
+  notifyApprovalBody: "{tool} is asking for your approval",
+  notifyQuestionTitle: "The agent has a question",
+  notifyQuestionBody: "{count} question(s) waiting for your answer",
+  notifyDoneTitle: "Session idle",
+  notifyDoneBody: "A DeepSeek Harness task finished.",
+  notifyErrorTitle: "Agent error",
+  notifyErrorBody: "{message}",
+
+  sessionsExportTitle: "Export session",
+
+  deeplinkTitle: "External task request",
+  deeplinkMessage: "An external link asks DeepWharf to create a session and send the prompt below. Send it?",
+  deeplinkSend: "Send",
+  deeplinkFailed: "Failed to send the task: {error}",
 
   updateTitle: "Harness update available",
   updateMessage: "A new DeepSeek Harness is available: {from} → {to}",

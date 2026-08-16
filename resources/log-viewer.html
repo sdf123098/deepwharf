@@ -1,0 +1,46 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta http-equiv="Content-Security-Policy" content="default-src 'self'; style-src 'unsafe-inline'; script-src 'self'">
+<script src="shell-theme.js"></script>
+<style>
+  :root { --bg:#0d1117; --panel:#161b22; --border:#21262d; --text:#e6edf3; --muted:#8b949e; --accent:#4f8cff; }
+  @media (prefers-color-scheme: light) {
+    :root { --bg:#ffffff; --panel:#f6f8fa; --border:#d0d7de; --text:#1f2328; --muted:#57606a; --accent:#0969da; }
+  }
+  * { box-sizing: border-box; }
+  html, body { margin:0; height:100%; background:var(--bg); color:var(--text);
+    font-family: system-ui, "Segoe UI", "Microsoft YaHei", sans-serif; font-size:14px; }
+  main { display:flex; flex-direction:column; height:100%; }
+  .top { display:flex; gap:8px; align-items:center; padding:10px 14px; border-bottom:1px solid var(--border); }
+  .tab { background:transparent; color:var(--muted); border:1px solid transparent; border-radius:6px;
+    padding:5px 12px; font-size:13px; cursor:pointer; }
+  .tab.active { background:var(--panel); color:var(--text); border-color:var(--border); }
+  .spacer { flex:1; }
+  label.toggle { color:var(--muted); font-size:12px; display:flex; align-items:center; gap:5px; }
+  input[type=checkbox] { accent-color: var(--accent); }
+  button { background:var(--panel); color:var(--text); border:1px solid var(--border);
+    border-radius:6px; padding:5px 11px; font-size:12.5px; cursor:pointer; }
+  pre { flex:1; margin:0; padding:12px 14px; overflow:auto; white-space:pre-wrap; word-break:break-all;
+    font-family: ui-monospace, Consolas, "Cascadia Mono", monospace; font-size:12px; line-height:1.55;
+    color:var(--text); }
+  .rotated { color:#f0883e; font-size:11px; padding:2px 14px; }
+</style>
+</head>
+<body>
+<main>
+  <div class="top">
+    <button class="tab active" id="tabDesktop">desktop.log</button>
+    <button class="tab" id="tabHarness">harness.log</button>
+    <div class="spacer"></div>
+    <label class="toggle"><input type="checkbox" id="autoscroll" checked><span id="lblAuto"></span></label>
+    <button id="clear"></button>
+    <button id="open"></button>
+  </div>
+  <div class="rotated" id="rotated" style="display:none"></div>
+  <pre id="out"></pre>
+</main>
+<script src="log-viewer.js"></script>
+</body>
+</html>

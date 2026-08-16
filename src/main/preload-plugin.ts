@@ -5,7 +5,8 @@ contextBridge.exposeInMainWorld("pluginApi", {
   search: (query: string, from?: number, sourceId?: string) =>
     ipcRenderer.invoke("plugin-store:search", query, from ?? 0, sourceId),
   installed: () => ipcRenderer.invoke("plugin-store:installed"),
-  install: (pkg: string, registry: string) => ipcRenderer.invoke("plugin-store:install", pkg, registry),
+  install: (spec: string, registry: string, opts?: { manual?: boolean }) =>
+    ipcRenderer.invoke("plugin-store:install", spec, registry, opts ?? {}),
   restart: () => ipcRenderer.invoke("plugin-store:restart"),
   locale: () => ipcRenderer.invoke("plugin-store:locale"),
   onLocale: (cb: (l: string) => void) =>
@@ -14,5 +15,7 @@ contextBridge.exposeInMainWorld("pluginApi", {
   onProgress: (cb: (line: string) => void) =>
     ipcRenderer.on("plugin-store:progress", (_e, line: string) => cb(line)),
   // Registry-supplied repository links are validated (https only) by Main.
-  openExternal: (url: string) => ipcRenderer.invoke("plugin-store:openExternal", url),
+  openExternal: (url: string) => ipcRenderer.invoke("plugin-store:openExternal"),
+  onTheme: (cb: (payload: unknown) => void) =>
+    ipcRenderer.on("theme:changed", (_e, payload) => cb(payload)),
 });

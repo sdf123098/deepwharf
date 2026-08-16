@@ -11,6 +11,7 @@ const {
   DEFAULT_RETRYABLE_CODES,
   schemaHasField,
   describeToView,
+  discoverCredentialRefs,
   retryOps,
   timeoutOps,
   buildMutateOps,
@@ -36,7 +37,7 @@ const DEEPSEEK_SCHEMA = makeSchema("ds", (refs, leaf) => {
     type: "object",
     meta: { default: {} },
     dict: {
-      apiKeyEnv: leaf("ds-key"),
+      apiKeyEnv: "ds-key",
       baseURL: leaf("ds-base"),
       maxTokens: leaf("ds-max"),
       models: "ds-models",
@@ -44,6 +45,8 @@ const DEEPSEEK_SCHEMA = makeSchema("ds", (refs, leaf) => {
       retryPolicy: "ds-rp",
     },
   };
+  // the real dsh schema marks the ref-name field with role "credential-ref"
+  refs["ds-key"] = { type: "string", meta: { role: "credential-ref" } };
   refs["ds-models"] = { type: "array", inner: leaf("ds-model") };
   refs["ds-sidle"] = { type: "number", meta: { default: 300000 } };
   refs["ds-rp"] = { type: "union", list: ["ds-rp-normal", "ds-rp-always"] };
@@ -66,13 +69,14 @@ const PI_SCHEMA = makeSchema("pi", (refs, leaf) => {
     type: "object",
     dict: {
       displayName: leaf("dn"),
-      apiKeyEnv: leaf("ak"),
+      apiKeyEnv: "ak",
       timeoutMs: "pi-t",
       streamIdleTimeoutMs: "pi-sidle",
       websocketConnectTimeoutMs: "pi-ws",
       retryPolicy: "pi-rp",
     },
   };
+  refs.ak = { type: "string", meta: { role: "credential-ref" } };
   refs["pi-t"] = { type: "number", meta: {} };
   refs["pi-sidle"] = { type: "number", meta: { default: 300000 } };
   refs["pi-ws"] = { type: "number", meta: {} };
@@ -250,6 +254,43 @@ test("describeToView: deepseek user override and missing namespaces", () => {
   assert.strictEqual(empty.writable, false);
   assert.deepStrictEqual(empty.providers, []);
   assert.deepStrictEqual(describeToView(undefined).providers, []);
+});
+
+// --- discoverCredentialRefs ----------------------------------------------------
+
+test("discoverCredentialRefs: reads ref names from credential-ref schema fields", () => {
+  assert.deepStrictEqual(discoverCredentialRefs(describeFixture()), ["DEEPSEEK_API_KEY"]);
+});
+
+test("discoverCredentialRefs: wildcard dict providers fan out", () => {
+  const fixture = describeFixture();
+  fixture.namespaces[1].value.providers.OpenRouter.apiKeyEnv = "OPENROUTER_API_KEY";
+  fixture.namespaces[1].value.providers.TokenRhythm.apiKeyEnv = "TOKENRHYTHM_API_KEY";
+  assert.deepStrictEqual(discoverCredentialRefs(fixture), [
+    "DEEPSEEK_API_KEY",
+    "OPENROUTER_API_KEY",
+    "TOKENRHYTHM_API_KEY",
+  ]);
+});
+
+test("discoverCredentialRefs: skips absent or non-ref-shaped values", () => {
+  const fixture = describeFixture();
+  fixture.namespaces[0].value.apiKeyEnv = ""; // present but empty
+  fixture.namespaces[1].value.providers.OpenRouter.apiKeyEnv = "not a ref!";
+  assert.deepStrictEqual(discoverCredentialRefs(fixture), []);
+});
+
+test("discoverCredentialRefs: dedupes across namespaces, tolerates garbage", () => {
+  const fixture = describeFixture();
+  fixture.namespaces.push({
+    ns: "web-search-deepseek",
+    schema: DEEPSEEK_SCHEMA,
+    value: { apiKeyEnv: "DEEPSEEK_API_KEY" },
+  });
+  assert.deepStrictEqual(discoverCredentialRefs(fixture), ["DEEPSEEK_API_KEY"]);
+  assert.deepStrictEqual(discoverCredentialRefs(undefined), []);
+  assert.deepStrictEqual(discoverCredentialRefs({ namespaces: "nope" }), []);
+  assert.deepStrictEqual(discoverCredentialRefs({ namespaces: [{ ns: "x" }] }), []);
 });
 
 // --- mutate ops ---------------------------------------------------------------

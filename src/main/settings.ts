@@ -13,6 +13,11 @@ const DEFAULTS: DesktopSettings = {
   language: "auto",
   theme: "auto",
   devtoolsOnStart: false,
+  closeToTray: true,
+  globalShortcutEnabled: true,
+  autoLaunch: false,
+  notificationsEnabled: true,
+  onboardingDismissed: false,
   windowBounds: {},
 };
 

@@ -9,6 +9,11 @@ const {
   sanitizeSettingsPatch,
   sanitizeWindowBounds,
   resolveTargetModules,
+  parseDeepLink,
+  parseTokenUsage,
+  cacheHitRate,
+  contextPercent,
+  formatTokens,
 } = require("../dist/main/pure.js");
 
 // --- semverGt ---------------------------------------------------------------
@@ -46,6 +51,10 @@ test("sanitizeSettingsPatch: passes valid fields through", () => {
     autoCheckShell: false,
     devtoolsOnStart: true,
     lastUpdateCheck: 123,
+    closeToTray: false,
+    globalShortcutEnabled: true,
+    autoLaunch: true,
+    notificationsEnabled: false,
   });
   assert.deepEqual(out, {
     theme: "dark",
@@ -54,7 +63,18 @@ test("sanitizeSettingsPatch: passes valid fields through", () => {
     autoCheckShell: false,
     devtoolsOnStart: true,
     lastUpdateCheck: 123,
+    closeToTray: false,
+    globalShortcutEnabled: true,
+    autoLaunch: true,
+    notificationsEnabled: false,
   });
+});
+
+test("sanitizeSettingsPatch: drops non-boolean desktop-integration toggles", () => {
+  assert.deepEqual(
+    sanitizeSettingsPatch({ closeToTray: "yes", globalShortcutEnabled: 1, autoLaunch: null, notificationsEnabled: "on" }),
+    {},
+  );
 });
 
 test("sanitizeSettingsPatch: drops unknown fields, bad enums and bad types", () => {
@@ -117,6 +137,62 @@ test("sanitizeSettingsPatch: filters a windowBounds record", () => {
     main: { x: 10, y: 20, width: 1400, height: 900 },
     store: { width: 1100, height: 760 },
   });
+});
+
+test("sanitizeSettingsPatch: theme accepts known ids only", () => {
+  const ok = sanitizeSettingsPatch({ theme: "midnight" });
+  assert.equal(ok.theme, "midnight");
+  assert.deepEqual(sanitizeSettingsPatch({ theme: "neon-pink" }), {});
+});
+
+// --- token usage helpers --------------------------------------------------------
+
+test("parseTokenUsage + cacheHitRate + contextPercent", () => {
+  const u = parseTokenUsage({ uncachedInputTokens: 100, outputTokens: 50, cacheReadTokens: 300, cacheWriteTokens: 100 });
+  assert.deepStrictEqual(u, { uncachedInputTokens: 100, outputTokens: 50, cacheReadTokens: 300, cacheWriteTokens: 100 });
+  assert.strictEqual(cacheHitRate(u), 300 / 500);
+  assert.strictEqual(cacheHitRate({ uncachedInputTokens: 0, outputTokens: 5, cacheReadTokens: 0, cacheWriteTokens: 0 }), null);
+  assert.strictEqual(parseTokenUsage({ uncachedInputTokens: -1 }), null);
+  assert.strictEqual(parseTokenUsage("nope"), null);
+  assert.strictEqual(contextPercent({ projectedTokens: 64000, contextWindow: 128000 }), 0.5);
+  assert.strictEqual(contextPercent({ pressureTokens: 256000, contextWindow: 128000 }), 1);
+  assert.strictEqual(contextPercent({ projectedTokens: 10 }), null);
+});
+
+test("formatTokens: compact human units", () => {
+  assert.strictEqual(formatTokens(0), "0");
+  assert.strictEqual(formatTokens(999), "999");
+  assert.strictEqual(formatTokens(1234), "1.2K");
+  assert.strictEqual(formatTokens(999999), "1000K");
+  assert.strictEqual(formatTokens(1234567), "1.2M");
+  assert.strictEqual(formatTokens(234000000), "234M");
+});
+
+// --- parseDeepLink -------------------------------------------------------------
+
+test("parseDeepLink: new with prompt and cwd, open/bare forms", () => {
+  assert.deepStrictEqual(
+    parseDeepLink("deepwharf://new?prompt=hello%20world&cwd=D%3A%5Cproj"),
+    { prompt: "hello world", cwd: "D:\\proj" },
+  );
+  assert.deepStrictEqual(parseDeepLink("deepwharf://open"), {});
+  assert.deepStrictEqual(parseDeepLink("deepwharf://"), {});
+  assert.deepStrictEqual(parseDeepLink("deepwharf://new"), {});
+});
+
+test("parseDeepLink: rejects foreign schemes, unknown hosts, garbage", () => {
+  assert.strictEqual(parseDeepLink("https://example.com"), null);
+  assert.strictEqual(parseDeepLink("deepwharf://evil?prompt=x"), null);
+  assert.strictEqual(parseDeepLink("not a url"), null);
+  assert.strictEqual(parseDeepLink(""), null);
+});
+
+test("parseDeepLink: caps prompt length and refuses relative cwd", () => {
+  const long = parseDeepLink(`deepwharf://new?prompt=${"a".repeat(3000)}`);
+  assert.strictEqual(long.prompt.length, 2000);
+  assert.deepStrictEqual(parseDeepLink("deepwharf://new?prompt=hi&cwd=relative\\path"), { prompt: "hi" });
+  // empty prompt is treated as a bare link, not a prompt of ""
+  assert.deepStrictEqual(parseDeepLink("deepwharf://new?prompt="), {});
 });
 
 // --- resolveTargetModules ---------------------------------------------------

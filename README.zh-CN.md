@@ -23,6 +23,11 @@ DeepWharf (Electron)
 - **原生桌面外壳**——单行合并标题栏（logo + 插件商店 + 设置），跟随系统明暗主题，
   本地化（简体中文 / English）。
 - **插件商店**——浏览 `dsh-plugin` 生态（npm registry），走官方 `dsh plugin` 机制安装（内置 pnpm）。
+- **桌面集成**——关闭窗口最小化到系统托盘（Harness 会话保持运行）、全局快捷键 `Ctrl+Alt+D`
+  唤起窗口、可选开机自启，均可在设置中开关。
+- **桌面通知与引导**——审批 / 提问 / 任务完成 / 出错时系统 Toast；首次启动检测缺失的
+  API 密钥并引导填写（官方凭据存储，立即生效）。
+- **会话历史**——独立窗口浏览全部会话、全文搜索、一键导出 ZIP（含子代理与附件）。
 - **外壳设置**——语言、主题、自动更新开关、版本信息、日志。
 - **Harness 自动更新**——查询 registry，原子替换 `resources/harness` 后重启。
 - **干净的生命周期**——单实例、端口自动分配、HTTP 就绪探测、退出时清理进程树。
@@ -31,7 +36,7 @@ DeepWharf (Electron)
 ## 下载 / 安装
 
 从 Releases 获取 `DeepWharf-Setup-<ver>-x64.exe`（NSIS）或 `DeepWharf-Portable-<ver>-x64.exe`。
-一键、按用户安装；覆盖安装保留数据。
+安装向导默认按用户安装（无需管理员），可自选安装目录（仅选受保护目录时请求提权）；覆盖安装保留数据。
 
 ## 从源码构建
 
@@ -41,9 +46,13 @@ DeepWharf (Electron)
 npm install
 npm run prepare:node       # 下载内置 node.exe + npm + pnpm -> resources/runtime
 npm run prepare:harness    # vendor @deepseek-ai/dsh + 裁剪 -> resources/harness
-npm run icon               # 用 DeepSeek 官方标志生成 build/icon.ico
+npm run icon               # 由 build/brand-icon.png 重新生成 build/icon.ico
 npm run dist               # 打包 NSIS + Portable -> release/
 ```
+
+品牌图源是 `build/brand-icon.png`（带透明底的方形 PNG）。换图标：
+`npm run icon 路径/新图.png` —— 脚本会把它存为品牌源，重新生成 Windows 图标（白色圆角
+底板，深浅色任务栏都清晰）与壳内 logo，后续构建自动复用。
 
 ## 说明
 

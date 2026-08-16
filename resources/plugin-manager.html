@@ -1,0 +1,83 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta http-equiv="Content-Security-Policy" content="default-src 'self'; style-src 'unsafe-inline'; script-src 'self'">
+<script src="shell-theme.js"></script>
+<style>
+  :root { --bg:#0d1117; --panel:#161b22; --border:#21262d; --text:#e6edf3; --muted:#8b949e;
+          --accent:#4f8cff; --ok:#3fb950; --warn:#d29922; --danger:#f85149; }
+  @media (prefers-color-scheme: light) {
+    :root { --bg:#ffffff; --panel:#f6f8fa; --border:#d0d7de; --text:#1f2328; --muted:#57606a;
+            --accent:#0969da; --ok:#1a7f37; --warn:#9a6700; --danger:#cf222e; }
+  }
+  * { box-sizing: border-box; }
+  html, body { margin:0; height:100%; background:var(--bg); color:var(--text);
+    font-family: system-ui, "Segoe UI", "Microsoft YaHei", sans-serif; font-size:14px; }
+  main { display:flex; flex-direction:column; height:100%; }
+  .tabs { display:flex; gap:6px; padding:12px 16px 0; border-bottom:1px solid var(--border); }
+  .tab { background:transparent; color:var(--muted); border:none; border-bottom:2px solid transparent;
+    padding:8px 14px; font-size:13.5px; cursor:pointer; }
+  .tab.active { color:var(--text); border-bottom-color: var(--accent); font-weight:600; }
+  .toolbar { display:flex; align-items:center; gap:8px; padding:12px 16px 0; }
+  .toolbar .grow { flex:1; }
+  button.act { background:var(--panel); color:var(--text); border:1px solid var(--border);
+    border-radius:6px; padding:5px 11px; font-size:12.5px; cursor:pointer; }
+  button.act.primary { background:var(--accent); border-color:var(--accent); color:#fff; }
+  button.act.danger { color:var(--danger); border-color:var(--danger); background:transparent; }
+  button.act:disabled { opacity:.45; cursor:default; }
+  .scroll { flex:1; overflow-y:auto; padding: 10px 16px 16px; }
+  .progress { background:var(--panel); border:1px solid var(--border); border-radius:8px;
+    padding:8px 12px; margin-bottom:10px; font-family: ui-monospace, Consolas, monospace;
+    font-size:11px; color:var(--muted); max-height:130px; overflow-y:auto; white-space:pre-wrap;
+    word-break:break-all; }
+  .row { background:var(--panel); border:1px solid var(--border); border-radius:8px;
+    padding:11px 14px; margin-bottom:8px; display:flex; align-items:center; gap:10px; }
+  .row .body { flex:1; min-width:0; }
+  .row .t { font-size:13px; font-weight:600; display:flex; align-items:center; gap:8px; flex-wrap:wrap; }
+  .row .t code { font-family: ui-monospace, Consolas, monospace; color:var(--accent); }
+  .row .m { color:var(--muted); font-size:11.5px; margin-top:3px; white-space:nowrap;
+    overflow:hidden; text-overflow:ellipsis; font-family: ui-monospace, Consolas, monospace; }
+  .row .actions { display:flex; gap:6px; flex:none; }
+  .tag { font-size:10.5px; padding:2px 8px; border-radius:10px; white-space:nowrap; border:1px solid var(--border); color:var(--muted); }
+  .tag.ok { color:var(--ok); border-color:var(--ok); }
+  .tag.off { color:var(--warn); border-color:var(--warn); }
+  .empty { color:var(--muted); text-align:center; padding:36px 0; font-size:13px; line-height:1.8; }
+  .msg { font-size:12px; min-height:16px; padding:0 2px 8px; color:var(--muted); }
+  .msg.err { color:var(--danger); }
+  .footnote { color:var(--muted); font-size:10.5px; text-align:center; padding:6px 0 12px; line-height:1.6; }
+  form.add { background:var(--panel); border:1px dashed var(--border); border-radius:8px;
+    padding:12px 14px; margin-bottom:10px; display:grid; gap:8px; }
+  form.add .grid { display:grid; grid-template-columns: 1fr 1fr; gap:8px; }
+  form.add label { font-size:11px; color:var(--muted); display:flex; flex-direction:column; gap:4px; }
+  form.add input, form.add select, form.add textarea { background:var(--bg); color:var(--text);
+    border:1px solid var(--border); border-radius:6px; padding:6px 9px; font-size:12.5px;
+    font-family: inherit; outline:none; }
+  form.add input:focus, form.add textarea:focus { border-color: var(--accent); }
+  form.add textarea { font-family: ui-monospace, Consolas, monospace; min-height:52px; resize:vertical; }
+  form.add .full { grid-column: 1 / -1; }
+</style>
+</head>
+<body>
+<main>
+  <div class="tabs">
+    <button class="tab active" id="tabPlugins"></button>
+    <button class="tab" id="tabMcp"></button>
+    <button class="tab" id="tabSkills"></button>
+  </div>
+  <div class="toolbar">
+    <span class="msg grow" id="msg"></span>
+    <button class="act" id="refresh"></button>
+    <button class="act primary" id="restart" style="display:none"></button>
+  </div>
+  <div class="scroll">
+    <div class="progress" id="progress" hidden></div>
+    <div id="panePlugins"></div>
+    <div id="paneMcp" style="display:none"></div>
+    <div id="paneSkills" style="display:none"></div>
+  </div>
+  <div class="footnote" id="footnote"></div>
+</main>
+<script src="plugin-manager.js"></script>
+</body>
+</html>

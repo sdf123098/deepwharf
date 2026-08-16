@@ -24,6 +24,14 @@ DeepWharf (Electron)
   (follows system light/dark), localized (简体中文 / English).
 - **Plugin Store** — browse the `dsh-plugin` ecosystem (npm registry) and install via the official
   `dsh plugin` mechanism (bundled pnpm).
+- **Desktop integration** — closing the window minimizes to the system tray (Harness sessions keep
+  running), a global `Ctrl+Alt+D` hotkey shows the window, and launch-at-startup is optional.
+  All three can be toggled in Settings.
+- **Notifications & onboarding** — system toasts for approvals, questions, finished tasks, and
+  agent errors; first run detects missing API keys and walks you through the official credential
+  store (effective immediately).
+- **Session history** — a dedicated window to browse all sessions, full-text search them, and
+  export any one as a ZIP (with subagent logs and media attachments).
 - **Shell Settings** — language, theme, auto-update toggles, version info, logs.
 - **Harness auto-update** — checks the registry and swaps `resources/harness` atomically.
 - **Clean lifecycle** — single instance, port auto-pick, HTTP ready-probe, process-tree cleanup on exit.
@@ -32,7 +40,9 @@ DeepWharf (Electron)
 ## Download / Install
 
 Grab `DeepWharf-Setup-<ver>-x64.exe` (NSIS) or `DeepWharf-Portable-<ver>-x64.exe` from Releases.
-One-click, per-user install; overwrites preserve your data.
+The installer wizard defaults to a per-user install (no admin needed) and lets you pick the
+install directory (elevation is only requested for protected locations); overwrites preserve
+your data.
 
 ## Build from source
 
@@ -42,9 +52,15 @@ Requires Node.js ≥ 22 on the build machine only.
 npm install
 npm run prepare:node       # download embedded node.exe + npm + pnpm -> resources/runtime
 npm run prepare:harness    # vendor @deepseek-ai/dsh + prune -> resources/harness
-npm run icon               # generate build/icon.ico from the official DeepSeek mark
+npm run icon                # regenerate build/icon.ico from build/brand-icon.png
 npm run dist               # build NSIS + Portable installers -> release/
 ```
+
+The brand artwork lives in `build/brand-icon.png` (square PNG with
+transparency). To swap it: `npm run icon path/to/new-art.png` — the script
+copies the file into `build/`, regenerates the Windows icon (mounted on a white
+rounded plate for dark/light taskbar visibility) and the shell logo, and later
+rebuilds keep using the committed source.
 
 ## Notes
 

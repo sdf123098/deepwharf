@@ -4,6 +4,7 @@ import { readFileSync, existsSync } from "node:fs";
 import { join, dirname } from "node:path";
 import { localeForRenderer } from "./i18n";
 import { rememberedWindowBounds, trackWindowBounds } from "./window";
+import { themePayload, themeQuery } from "./theme";
 
 export interface PluginInfo {
   name: string;
@@ -15,10 +16,12 @@ export interface PluginInfo {
   score: number;
   /** True only when the published manifest declares dsh.bundle.patch. */
   dshBundle: boolean;
-  /** False for non-npm sources (e.g. GitHub topic) — no install button. */
+  /** False only for sources we cannot hand to `dsh plugin add` at all. */
   installable: boolean;
   /** Category tag for curated sources (e.g. awesome-dsh-plugin). */
   category: string;
+  /** The exact spec passed to `dsh plugin add` (npm name or github:owner/repo). */
+  installSpec: string;
 }
 
 export interface PluginSource {
@@ -53,6 +56,16 @@ export interface PluginStoreContext {
 
 /** npm package name: optional @scope/, then a valid name segment. */
 const PACKAGE_NAME_RE = /^(@[a-z0-9-~][a-z0-9-._~]*\/)?[a-z0-9-~][a-z0-9-._~]*$/;
+/** A bare or prefixed GitHub repo shorthand (owner/repo or github:owner/repo). */
+const GITHUB_SPEC_RE = /^github:([A-Za-z0-9_.-]+)\/([A-Za-z0-9_.-]+)$|^([A-Za-z0-9_.-]+)\/([A-Za-z0-9_.-]+)$/;
+
+/**
+ * Anything handed to `dsh plugin add` (a thin pnpm forwarder): never empty,
+ * never control characters, never a leading "-" (flag injection into pnpm).
+ */
+function isSafeSpec(s: string): boolean {
+  return s.length > 0 && s.length <= 500 && !/[\r\n\t\0]/.test(s) && !s.startsWith("-");
+}
 
 const MAX_INSTALL_OUTPUT = 64 * 1024;
 
@@ -121,6 +134,7 @@ async function searchNpmPlugins(
     dshBundle: false,
     installable: true,
     category: "",
+    installSpec: o.package.name,
   }));
   // Verify each candidate against its published manifest so only real Harness
   // bundles are presented as plugins.
@@ -158,8 +172,11 @@ async function searchGithubPlugins(query: string): Promise<PluginInfo[]> {
     repository: r.html_url,
     score: r.stargazers_count ?? 0,
     dshBundle: false,
-    installable: false,
+    // GitHub shorthand installs through the same official `dsh plugin add`
+    // (a thin pnpm forwarder) — the tarball comes from codeload.github.com.
+    installable: true,
     category: "",
+    installSpec: `github:${r.full_name}`,
   }));
 }
 
@@ -218,8 +235,9 @@ async function searchAwesomePlugins(query: string): Promise<PluginInfo[]> {
     repository: r.html_url,
     score: r.stargazers_count ?? 0,
     dshBundle: false,
-    installable: false,
+    installable: true,
     category: r.category_en ?? "",
+    installSpec: `github:${r.full_name}`,
   }));
 }
 
@@ -241,6 +259,21 @@ export async function installPlugin(
   registry: string,
   onProgress?: (line: string) => void,
 ): Promise<{ ok: boolean; output: string }> {
+  return runPnpmForward(ctx, ["add", pkg], registry, (m) => ctx.log(m), onProgress);
+}
+
+/**
+ * Run one `dsh plugin --profile web <args…>` invocation (add / remove /
+ * update — the CLI forwards everything to pnpm verbatim) and stream its
+ * output to the caller.
+ */
+export async function runPnpmForward(
+  ctx: PluginStoreContext,
+  verbArgs: string[],
+  registry: string,
+  logLine: (m: string) => void,
+  onProgress?: (line: string) => void,
+): Promise<{ ok: boolean; output: string }> {
   const pnpmDir = join(dirname(ctx.nodeExecutable), "pnpm"); // resources/runtime/pnpm
   const env = {
     ...process.env,
@@ -248,14 +281,14 @@ export async function installPlugin(
     npm_config_registry: registry,
     PATH: `${pnpmDir}${require("node:path").delimiter}${process.env.PATH ?? ""}`,
   };
-  ctx.log(`dsh plugin add ${pkg}`);
+  logLine(`dsh plugin ${verbArgs.join(" ")}`);
   const child = spawn(
     ctx.nodeExecutable,
-    [ctx.harnessEntry, "plugin", "--profile", "web", "add", pkg],
+    [ctx.harnessEntry, "plugin", "--profile", "web", ...verbArgs],
     { env, windowsHide: true },
   );
-  // Bounded output buffer; each chunk is also forwarded to the store window so
-  // the user sees live install/download progress.
+  // Bounded output buffer; each chunk is also forwarded so the user sees
+  // live install/download progress.
   let output = "";
   const appendOutput = (c: Buffer) => {
     const text = c.toString();
@@ -271,7 +304,7 @@ export async function installPlugin(
     child.on("error", reject);
     child.on("exit", (c) => resolve(c ?? -1));
   });
-  ctx.log(`dsh plugin add ${pkg} -> exit ${code}`);
+  logLine(`dsh plugin ${verbArgs.join(" ")} -> exit ${code}`);
   return { ok: code === 0, output };
 }
 
@@ -280,13 +313,15 @@ export function listInstalled(ctx: PluginStoreContext): string[] {
     const pkgJson = join(ctx.dshHome, "profiles", "web", "package.json");
     if (!existsSync(pkgJson)) return [];
     const manifest = JSON.parse(readFileSync(pkgJson, "utf8"));
-    // The profile's active bundles are the real plugin set — the old name
-    // heuristic missed bundles whose names don't contain "dsh".
-    const bundles = manifest?.dsh?.profile?.bundles;
-    if (Array.isArray(bundles)) return bundles.filter((b) => typeof b === "string");
-    // Degraded fallback for profiles without a bundles list.
-    const deps = manifest?.dependencies ?? {};
-    return Object.keys(deps);
+    // A plugin can be active two ways: listed in dsh.profile.bundles (the
+    // real plugin set) or sitting in dependencies — GitHub installs without
+    // a dsh.bundle land there until an upstream update promotes them. The
+    // union covers both so the store reflects what `dsh plugin` installed.
+    const bundles = Array.isArray(manifest?.dsh?.profile?.bundles)
+      ? manifest.dsh.profile.bundles.filter((b: unknown) => typeof b === "string")
+      : [];
+    const deps = Object.keys(manifest?.dependencies ?? {});
+    return [...new Set([...bundles, ...deps])];
   } catch {
     return [];
   }
@@ -307,7 +342,7 @@ export function openPluginStore(preloadPath: string, locale: string): void {
     ...rememberedWindowBounds("store", { width: 700, height: 480 }),
     minWidth: 700,
     minHeight: 480,
-    backgroundColor: "#0d1117",
+    backgroundColor: themePayload().colors.bg,
     title: "Plugin Store",
     webPreferences: {
       preload: preloadPath,
@@ -330,7 +365,7 @@ export function openPluginStore(preloadPath: string, locale: string): void {
     return { action: "deny" };
   });
   storeWindow.loadFile(join(__dirname, "../../resources/plugin-store.html"), {
-    query: { lang: locale },
+    query: { lang: locale, ...themeQuery() },
   });
   storeWindow.setMenu(null); // no redundant menu bar
   storeWindow.on("closed", () => {
@@ -363,25 +398,40 @@ export function registerPluginStoreIpc(
     assertStoreSender(e);
     return listInstalled(ctx);
   });
-  ipcMain.handle("plugin-store:install", async (e, pkg: unknown, registry: unknown) => {
+  ipcMain.handle("plugin-store:install", async (e, spec: unknown, registry: unknown, opts: unknown) => {
     assertStoreSender(e);
-    if (typeof pkg !== "string" || !PACKAGE_NAME_RE.test(pkg)) {
-      throw new Error("invalid package name");
+    if (typeof spec !== "string" || !isSafeSpec(spec)) {
+      throw new Error("invalid install spec");
     }
-    if (typeof registry !== "string" || !isKnownRegistry(registry)) {
-      throw new Error("invalid registry source");
+    const manual =
+      !!opts && typeof opts === "object" && (opts as Record<string, unknown>).manual === true;
+    const reg =
+      typeof registry === "string" && isKnownRegistry(registry) && registry !== ""
+        ? registry
+        : PLUGIN_SOURCES[0].registry ?? "https://registry.npmmirror.com";
+
+    // GitHub shorthand (owner/repo or github:owner/repo) goes straight to the
+    // official forwarder; dsh itself warns when the repo declares no dsh.bundle.
+    const gh = GITHUB_SPEC_RE.exec(spec);
+    const isGithub = spec.startsWith("github:") || gh !== null;
+    const finalSpec = gh && !spec.startsWith("github:") ? `github:${spec}` : spec;
+
+    // npm search-result rows keep the verified-bundle guarantee; manual input
+    // is deliberately free-form (any pnpm spec the official CLI accepts).
+    if (!isGithub && !manual) {
+      if (!PACKAGE_NAME_RE.test(spec)) throw new Error("invalid package name");
+      const { dshBundle } = await fetchPluginManifest(spec, reg);
+      if (!dshBundle) {
+        throw new Error(`"${spec}" does not declare dsh.bundle — not a Harness plugin`);
+      }
     }
-    const { dshBundle } = await fetchPluginManifest(pkg, registry);
-    if (!dshBundle) {
-      throw new Error(`"${pkg}" does not declare dsh.bundle — not a Harness plugin`);
-    }
-    const r = await installPlugin(ctx, pkg, registry, (line) => {
+    const r = await installPlugin(ctx, finalSpec, reg, (line) => {
       if (storeWindow && !storeWindow.isDestroyed()) {
         storeWindow.webContents.send("plugin-store:progress", line);
       }
     });
     if (!r.ok) throw new Error(r.output.slice(-500));
-    return { ok: true };
+    return { ok: true, spec: finalSpec };
   });
   ipcMain.handle("plugin-store:restart", (e) => {
     assertStoreSender(e);

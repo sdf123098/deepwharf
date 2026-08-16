@@ -15,6 +15,9 @@ electronDownload:
 
 files:
   - dist/**/*
+  # Tray icon ships inside the ASAR; the main process reads it at runtime.
+  - build/icon.ico
+  - resources/brand-logo.png
   - resources/splash.html
   - resources/main-shell.html
   - resources/main-shell.js
@@ -24,6 +27,17 @@ files:
   - resources/settings.js
   - resources/harness-settings.html
   - resources/harness-settings.js
+  - resources/onboarding.html
+  - resources/onboarding.js
+  - resources/sessions.html
+  - resources/sessions.js
+  - resources/log-viewer.html
+  - resources/log-viewer.js
+  - resources/shell-theme.js
+  - resources/usage.html
+  - resources/usage.js
+  - resources/plugin-manager.html
+  - resources/plugin-manager.js
 
 # Phase 4/5: embedded Node runtime goes outside the ASAR.
 # The Harness ships as ONE archive (harness.zip) so the installer copies a few
@@ -50,8 +64,10 @@ win:
     signingHashAlgorithms: ["sha256"]
 
 nsis:
-  # 一键安装：双击即装，无向导、无 UAC（per-user 安装到 %LOCALAPPDATA%\Programs）。
-  oneClick: true
+  # 向导式安装：可选安装范围（默认 per-user → %LOCALAPPDATA%\Programs），
+  # 并允许自选安装目录（选受保护目录时安装器自动请求提权，无 UAC 一键模式）。
+  oneClick: false
+  allowToChangeInstallationDirectory: true
   perMachine: false
   # 覆盖安装 / 卸载时保留用户数据（sessions、profiles、settings 在 %APPDATA%）。
   deleteAppDataOnUninstall: false

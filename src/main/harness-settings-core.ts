@@ -174,6 +174,95 @@ export function schemaHasField(schema: unknown, path: readonly string[]): boolea
   return hasPath(s, s.uid, path);
 }
 
+// --- credential-ref discovery --------------------------------------------------
+// dsh marks credential-reference fields (the apiKeyEnv family) with
+// schemastery's .role("credential-ref"), which lands in the schema node's
+// meta and survives settings.describe's toJSON. Walking every namespace for
+// that marker gives the shell the exact set of credential names the harness
+// will look up — no hardcoded DEEPSEEK_API_KEY.
+
+/** Collect the value paths of every field whose meta.role is "credential-ref". */
+export function credentialRefPaths(schema: unknown): string[][] {
+  if (!isRecord(schema)) return [];
+  const s = schema as unknown as SchemaJson;
+  if (!isRecord(s.refs) || (typeof s.uid !== "string" && typeof s.uid !== "number")) return [];
+  const out: string[][] = [];
+  const visit = (ref: unknown, path: string[], depth: number): void => {
+    if (depth > 8) return; // defensive: cycles via lazy refs
+    const node = resolveNode(s, ref);
+    if (!node) return;
+    const meta = isRecord(node.meta) ? node.meta : undefined;
+    if (meta?.role === "credential-ref") {
+      out.push(path); // the leaf is the ref-name string; nothing deeper matters
+      return;
+    }
+    switch (node.type) {
+      case "union": {
+        const list = Array.isArray(node.list) ? node.list : [];
+        for (const branch of list) visit(branch, path, depth + 1);
+        break;
+      }
+      case "lazy":
+        visit(node.inner, path, depth + 1);
+        break;
+      case "object": {
+        const dict = isRecord(node.dict) ? node.dict : {};
+        for (const [key, child] of Object.entries(dict)) visit(child, [...path, key], depth + 1);
+        break;
+      }
+      case "dict":
+      case "array":
+        visit(node.inner, [...path, "*"], depth + 1);
+        break;
+      default:
+        break;
+    }
+  };
+  visit(s.uid, [], 0);
+  return out;
+}
+
+/** Values present at a schema-shaped path; "*" fans out over a record's keys. */
+export function valuesAtPath(value: unknown, path: readonly string[]): unknown[] {
+  let current: unknown[] = [value];
+  for (const seg of path) {
+    const next: unknown[] = [];
+    for (const v of current) {
+      if (seg === "*") {
+        if (isRecord(v)) next.push(...Object.values(v));
+      } else if (isRecord(v) && seg in v) {
+        next.push(v[seg]);
+      }
+    }
+    current = next;
+  }
+  return current;
+}
+
+const CREDENTIAL_REF_RE = /^[A-Za-z_][A-Za-z0-9_]*$/;
+
+/**
+ * The concrete credential reference names a settings.describe response
+ * declares: every credential-ref field whose resolved value is a ref-shaped
+ * string (e.g. "DEEPSEEK_API_KEY"). A provider that never had its apiKeyEnv
+ * set has no value to read and stays invisible until configured in settings.
+ */
+export function discoverCredentialRefs(describe: unknown): string[] {
+  const root = isRecord(describe) ? describe : undefined;
+  const namespaces = Array.isArray(root?.namespaces) ? root.namespaces : [];
+  const refs = new Set<string>();
+  for (const n of namespaces) {
+    if (!isRecord(n)) continue;
+    const value = isRecord(n.value) ? n.value : undefined;
+    for (const path of credentialRefPaths(n.schema)) {
+      for (const v of valuesAtPath(value, path)) {
+        if (typeof v === "string" && CREDENTIAL_REF_RE.test(v)) refs.add(v);
+      }
+    }
+  }
+  return [...refs].sort();
+}
+
 // --- provider view -------------------------------------------------------------
 
 export type ProviderKind = "deepseek" | "pi-ai";

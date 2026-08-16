@@ -15,8 +15,15 @@ export interface DesktopSettings {
   lastShellCheck: number;
   // Appearance / behavior
   language: "auto" | "zh-CN" | "en-US";
-  theme: "auto" | "light" | "dark";
+  theme: string;
   devtoolsOnStart: boolean;
+  // Desktop integration
+  closeToTray: boolean;
+  globalShortcutEnabled: boolean;
+  autoLaunch: boolean;
+  notificationsEnabled: boolean;
+  /** User dismissed the API-key onboarding; keep it from auto-opening again. */
+  onboardingDismissed: boolean;
   // Per-window geometry, keyed by window id ("main", "settings", "store", "harnessSettings").
   windowBounds: Record<string, WindowBounds>;
 }
@@ -51,7 +58,62 @@ export function sanitizeWindowBounds(input: unknown): WindowBounds | undefined {
   return out;
 }
 
-const THEMES = ["auto", "light", "dark"] as const;
+const THEMES = ["auto", "light", "dark", "midnight", "forest", "warm", "contrast"] as const;
+
+/** Shell theme palettes. Colors land as CSS variables (--bg, --panel, …) in
+ * every shell window; `mode` drives nativeTheme so the embedded Harness web
+ * UI follows the same light/dark base. */
+export interface ShellTheme {
+  id: string;
+  mode: "light" | "dark";
+  colors: {
+    bg: string;
+    panel: string;
+    border: string;
+    text: string;
+    muted: string;
+    accent: string;
+  };
+}
+
+export const SHELL_THEMES: ShellTheme[] = [
+  {
+    id: "light",
+    mode: "light",
+    colors: { bg: "#ffffff", panel: "#f6f8fa", border: "#d0d7de", text: "#1f2328", muted: "#57606a", accent: "#0969da" },
+  },
+  {
+    id: "dark",
+    mode: "dark",
+    colors: { bg: "#0d1117", panel: "#161b22", border: "#21262d", text: "#e6edf3", muted: "#8b949e", accent: "#4f8cff" },
+  },
+  {
+    id: "midnight",
+    mode: "dark",
+    colors: { bg: "#0a1428", panel: "#101d36", border: "#1d2d4d", text: "#dbe7ff", muted: "#7f93b8", accent: "#5ba3f5" },
+  },
+  {
+    id: "forest",
+    mode: "dark",
+    colors: { bg: "#0e1512", panel: "#14201a", border: "#223529", text: "#dcefe3", muted: "#7e9a88", accent: "#3fb950" },
+  },
+  {
+    id: "warm",
+    mode: "light",
+    colors: { bg: "#faf5ec", panel: "#f3ead9", border: "#e2d5bd", text: "#33302a", muted: "#7c7364", accent: "#b4632a" },
+  },
+  {
+    id: "contrast",
+    mode: "light",
+    colors: { bg: "#ffffff", panel: "#ffffff", border: "#000000", text: "#000000", muted: "#333333", accent: "#0000cd" },
+  },
+];
+
+/** Concrete palette for a stored theme id; "auto" resolved by the caller. */
+export function shellTheme(id: string): ShellTheme {
+  return SHELL_THEMES.find((t) => t.id === id) ?? SHELL_THEMES[1];
+}
+
 const LANGUAGES = ["auto", "zh-CN", "en-US"] as const;
 
 /** Standard semver comparison — handles rc/alpha/beta/build metadata correctly. */
@@ -61,6 +123,102 @@ export function semverGt(a: string, b: string): boolean {
   } catch {
     return false; // an invalid version never compares greater
   }
+}
+
+// --- token usage helpers --------------------------------------------------------
+
+/** The dsh-token-meter `tokenUsage` projection value (per-session totals). */
+export interface TokenUsage {
+  uncachedInputTokens: number;
+  outputTokens: number;
+  cacheReadTokens: number;
+  cacheWriteTokens: number;
+}
+
+/** Validate a raw projection value as a TokenUsage; null when malformed. */
+export function parseTokenUsage(v: unknown): TokenUsage | null {
+  if (!v || typeof v !== "object") return null;
+  const o = v as Record<string, unknown>;
+  const out: TokenUsage = { uncachedInputTokens: 0, outputTokens: 0, cacheReadTokens: 0, cacheWriteTokens: 0 };
+  for (const key of Object.keys(out) as (keyof TokenUsage)[]) {
+    const n = o[key];
+    if (typeof n !== "number" || !Number.isFinite(n) || n < 0) return null;
+    out[key] = n;
+  }
+  return out;
+}
+
+/** Share of prompt tokens served from cache; null before any input exists. */
+export function cacheHitRate(u: TokenUsage): number | null {
+  const input = u.cacheReadTokens + u.cacheWriteTokens + u.uncachedInputTokens;
+  if (input <= 0) return null;
+  return u.cacheReadTokens / input;
+}
+
+/** Context occupancy percent from a contextPressure projection value. */
+export function contextPercent(pressure: unknown): number | null {
+  if (!pressure || typeof pressure !== "object") return null;
+  const o = pressure as Record<string, unknown>;
+  const used = typeof o.projectedTokens === "number" ? o.projectedTokens : o.pressureTokens;
+  const window = o.contextWindow;
+  if (typeof used !== "number" || typeof window !== "number" || window <= 0 || used < 0) return null;
+  return Math.min(1, used / window);
+}
+
+/** 1234 -> "1.2K", 1234567 -> "1.2M"; plain number below 1000. */
+export function formatTokens(n: number): string {
+  if (!Number.isFinite(n) || n < 0) return "0";
+  if (n < 1000) return String(Math.round(n));
+  const units: Array<[number, string]> = [
+    [1_000_000_000, "B"],
+    [1_000_000, "M"],
+    [1_000, "K"],
+  ];
+  for (const [size, suffix] of units) {
+    if (n >= size) {
+      const v = n / size;
+      return (v >= 100 ? v.toFixed(0) : v.toFixed(1)) + suffix;
+    }
+  }
+  return String(n);
+}
+
+// --- deepwharf:// deep links ----------------------------------------------------
+
+export interface DeepLinkIntent {
+  prompt?: string;
+  cwd?: string;
+}
+
+const DEEP_LINK_MAX_PROMPT = 2000;
+const DEEP_LINK_MAX_CWD = 260;
+
+/**
+ * Parse a deepwharf:// URL. Only `deepwharf://new?prompt=…&cwd=…` (and the bare
+ * `deepwharf://` / `deepwharf://open` "just show me" forms) are recognized;
+ * anything else returns null. Prompt and cwd are length-capped; cwd must look
+ * like an absolute Windows path. The link NEVER auto-sends — the caller must
+ * confirm with the user before creating a session.
+ */
+export function parseDeepLink(raw: string): DeepLinkIntent | null {
+  let u: URL;
+  try {
+    u = new URL(raw);
+  } catch {
+    return null;
+  }
+  if (u.protocol !== "deepwharf:") return null;
+  if (u.host !== "new" && u.host !== "open" && u.host !== "") return null;
+  const intent: DeepLinkIntent = {};
+  const prompt = u.searchParams.get("prompt");
+  if (prompt !== null && prompt !== "") {
+    intent.prompt = prompt.slice(0, DEEP_LINK_MAX_PROMPT);
+  }
+  const cwd = u.searchParams.get("cwd");
+  if (cwd !== null && cwd !== "" && /^[A-Za-z]:[\\/]/.test(cwd) && cwd.length <= DEEP_LINK_MAX_CWD) {
+    intent.cwd = cwd;
+  }
+  return intent;
 }
 
 /**
@@ -74,13 +232,20 @@ export function sanitizeSettingsPatch(input: unknown): Partial<DesktopSettings> 
   if (typeof o.autoCheckUpdates === "boolean") patch.autoCheckUpdates = o.autoCheckUpdates;
   if (typeof o.autoCheckShell === "boolean") patch.autoCheckShell = o.autoCheckShell;
   if (typeof o.devtoolsOnStart === "boolean") patch.devtoolsOnStart = o.devtoolsOnStart;
+  if (typeof o.closeToTray === "boolean") patch.closeToTray = o.closeToTray;
+  if (typeof o.globalShortcutEnabled === "boolean") {
+    patch.globalShortcutEnabled = o.globalShortcutEnabled;
+  }
+  if (typeof o.autoLaunch === "boolean") patch.autoLaunch = o.autoLaunch;
+  if (typeof o.notificationsEnabled === "boolean") patch.notificationsEnabled = o.notificationsEnabled;
+  if (typeof o.onboardingDismissed === "boolean") patch.onboardingDismissed = o.onboardingDismissed;
   if (typeof o.lastUpdateCheck === "number") patch.lastUpdateCheck = o.lastUpdateCheck;
   if (typeof o.lastShellCheck === "number") patch.lastShellCheck = o.lastShellCheck;
   if (typeof o.language === "string" && (LANGUAGES as readonly string[]).includes(o.language)) {
     patch.language = o.language as DesktopSettings["language"];
   }
   if (typeof o.theme === "string" && (THEMES as readonly string[]).includes(o.theme)) {
-    patch.theme = o.theme as DesktopSettings["theme"];
+    patch.theme = o.theme;
   }
   if (o.windowBounds && typeof o.windowBounds === "object" && !Array.isArray(o.windowBounds)) {
     const record: Record<string, WindowBounds> = {};

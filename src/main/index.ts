@@ -1,4 +1,4 @@
-import { app, BrowserWindow, dialog, shell, ipcMain, Menu, nativeTheme } from "electron";
+import { app, BrowserWindow, dialog, globalShortcut, Notification, shell, ipcMain, Menu, nativeTheme } from "electron";
 import { spawnSync } from "node:child_process";
 import { existsSync, mkdirSync, readdirSync, rmSync, truncateSync } from "node:fs";
 import { join } from "node:path";
@@ -13,6 +13,7 @@ import {
   setSplashStatus,
   setSplashVersion,
   openExternalFromWebContents,
+  applyTitleBarOverlay,
 } from "./window";
 import {
   checkForUpdate,
@@ -20,15 +21,30 @@ import {
   currentHarnessVersion,
   type HarnessUpdateTransaction,
 } from "./harness-update";
-import { semverGt } from "./pure";
+import { semverGt, parseDeepLink } from "./pure";
 import { t, localeForRenderer } from "./i18n";
 import { openPluginStore, registerPluginStoreIpc, type PluginStoreContext } from "./plugin-store";
 import { readSettings, writeSettings, updateSettings, sanitizeSettingsPatch } from "./settings";
-import { openHarnessSettingsWindow, registerHarnessSettingsIpc } from "./harness-settings";
+import { openHarnessSettingsWindow, registerHarnessSettingsIpc, harnessRpc } from "./harness-settings";
+import { TrayManager } from "./tray";
+import { HarnessEventWatcher } from "./harness-events";
+import {
+  fetchCredentialStatus,
+  openOnboardingWindow,
+  registerOnboardingIpc,
+  shouldAutoOpenOnboarding,
+} from "./onboarding";
+import { openSessionsWindow, registerSessionsIpc } from "./sessions-browser";
+import { openUsageWindow, registerUsageIpc, notifyUsageProjection } from "./usage-panel";
+import { openPluginManagerWindow, registerPluginManagerIpc } from "./plugin-manager";
+import { openLogViewerWindow, registerLogViewerIpc } from "./log-viewer";
+import { broadcastTheme, themeSourceFor } from "./theme";
 
 let splash: BrowserWindow | null = null;
 let mainWindow: BrowserWindow | null = null;
 let harness: HarnessProcessManager | null = null;
+let tray: TrayManager | null = null;
+const events = new HarnessEventWatcher();
 let log: Logger;
 let paths: ResolvedPaths;
 let quitting = false;
@@ -41,18 +57,149 @@ function setStatus(status: string, detail = ""): void {
   if (splash) setSplashStatus(splash, status, detail);
 }
 
+// --- desktop integration (tray / hotkey / login item) ------------------------
+
+const GLOBAL_HOTKEY = "Control+Alt+D";
+
+/** Tray icon inside the ASAR (packaged) or the repo (dev). */
+function trayIconPath(): string {
+  return join(__dirname, "..", "..", "build", "icon.ico");
+}
+
+/** Restore + focus the main window from any state (hidden, minimized, tray). */
+function showMainWindow(): void {
+  if (!mainWindow || mainWindow.isDestroyed()) return;
+  if (mainWindow.isMinimized()) mainWindow.restore();
+  mainWindow.show();
+  mainWindow.focus();
+}
+
+function applyGlobalShortcut(): void {
+  globalShortcut.unregister(GLOBAL_HOTKEY);
+  if (!readSettings().globalShortcutEnabled) return;
+  const ok = globalShortcut.register(GLOBAL_HOTKEY, showMainWindow);
+  if (!ok) log.log(`global hotkey ${GLOBAL_HOTKEY} unavailable (taken by another app)`);
+}
+
+/** Mirror the auto-launch setting into the OS (registry Run key). */
+function applyAutoLaunch(): void {
+  if (!app.isPackaged) return; // dev would register electron.exe instead of DeepWharf
+  try {
+    app.setLoginItemSettings({ openAtLogin: readSettings().autoLaunch });
+  } catch (err) {
+    log.log("setLoginItemSettings failed:", String(err));
+  }
+}
+
+// --- harness event notifications ----------------------------------------------
+
+/** Subagent child sessions: chatty status churn, never user-facing. */
+const childSessions = new Set<string>();
+/** Last known running state per session; a true→false edge means "finished". */
+const runningBySession = new Map<string, boolean>();
+
+/** Baseline the edge detector with session.list so a finish that races the
+ * watcher's connect is not misread as "never ran". */
+async function primeSessionBaseline(port: number): Promise<void> {
+  runningBySession.clear();
+  childSessions.clear();
+  try {
+    const value = (await harnessRpc(port, "session.list", {})) as {
+      items?: Array<{ sessionId: string; running: boolean; parentSessionId?: string; origin?: string }>;
+    };
+    for (const it of value?.items ?? []) {
+      runningBySession.set(it.sessionId, it.running);
+      if (it.parentSessionId !== undefined || it.origin === "subagent") {
+        childSessions.add(it.sessionId);
+      }
+    }
+  } catch (err) {
+    log.log("session.list baseline failed:", String(err)); // watcher still works, edges start from first frame
+  }
+}
+
+/** Toast only when the user is not already looking at the app. */
+function desktopNotify(title: string, body: string): void {
+  if (!readSettings().notificationsEnabled) return;
+  if (!Notification.isSupported()) {
+    logOnceNotifyUnsupported();
+    return;
+  }
+  if (!mainWindow || mainWindow.isDestroyed()) return;
+  if (mainWindow.isVisible() && mainWindow.isFocused()) return;
+  const n = new Notification({ title, body });
+  n.on("click", showMainWindow);
+  n.show();
+}
+
+let notifyUnsupportedLogged = false;
+function logOnceNotifyUnsupported(): void {
+  if (notifyUnsupportedLogged) return;
+  notifyUnsupportedLogged = true;
+  log.log("system notifications unsupported on this platform/settings");
+}
+
+function onSessionStatus(sessionId: string, running: boolean): void {
+  if (childSessions.has(sessionId)) return;
+  const was = runningBySession.get(sessionId);
+  runningBySession.set(sessionId, running);
+  if (was === true && !running) {
+    desktopNotify(t("notifyDoneTitle"), t("notifyDoneBody"));
+  }
+}
+
+async function startEventWatcher(port: number): Promise<void> {
+  events.stop();
+  if (quitting) return;
+  await primeSessionBaseline(port);
+  if (quitting) return;
+  events.start(port, {
+    onSessionStatus,
+    onAgentError: (sessionId, message) => {
+      if (childSessions.has(sessionId)) return;
+      desktopNotify(t("notifyErrorTitle"), t("notifyErrorBody", { message: message.slice(0, 200) }));
+    },
+    onApproval: (sessionId, toolName) => {
+      if (childSessions.has(sessionId)) return;
+      desktopNotify(t("notifyApprovalTitle"), t("notifyApprovalBody", { tool: toolName || "?" }));
+    },
+    onQuestion: (sessionId, count) => {
+      if (childSessions.has(sessionId)) return;
+      desktopNotify(t("notifyQuestionTitle"), t("notifyQuestionBody", { count }));
+    },
+    onSessionAdded: (sessionId, isSubagent) => {
+      if (isSubagent) childSessions.add(sessionId);
+    },
+    onSessionRemoved: (sessionId) => {
+      childSessions.delete(sessionId);
+      runningBySession.delete(sessionId);
+    },
+    onProjection: (sessionId, key, value) => {
+      // token-meter projections feed the usage panel; everything else ignored.
+      notifyUsageProjection(sessionId, key, value);
+    },
+  }, (m) => log.log(`events: ${m}`));
+}
+
 // --- single instance ------------------------------------------------------
 
 const gotLock = app.requestSingleInstanceLock();
 if (!gotLock) {
   app.quit();
 } else {
-  app.on("second-instance", () => {
-    if (mainWindow) {
-      if (mainWindow.isMinimized()) mainWindow.restore();
-      mainWindow.focus();
+  app.on("second-instance", (_e, commandLine: readonly string[]) => {
+    const link = extractDeepLink(commandLine);
+    if (link) {
+      void handleDeepLink(link);
+      return;
     }
+    showMainWindow();
   });
+  // Per-user protocol registration (HKCU, no admin). Dev must not hijack the
+  // scheme with an electron.exe entry.
+  if (app.isPackaged) {
+    app.setAsDefaultProtocolClient("deepwharf");
+  }
   app.setAppUserModelId("com.deepwharf.desktop");
   app.whenReady().then(bootstrap);
 }
@@ -103,6 +250,16 @@ async function bootstrap(): Promise<void> {
     } satisfies PluginStoreContext,
     onRestartHarness,
   );
+  registerPluginManagerIpc(
+    {
+      nodeExecutable: paths.nodeExecutable,
+      harnessEntry: paths.harnessEntry,
+      dshHome: paths.dshHome,
+      log: (m) => log.log(m),
+    } satisfies PluginStoreContext,
+    () => currentHarnessPort,
+    onRestartHarness,
+  );
 
   registerHarnessSettingsIpc(
     {
@@ -112,16 +269,35 @@ async function bootstrap(): Promise<void> {
     onRestartHarness,
   );
 
+  registerOnboardingIpc(() => currentHarnessPort, (m) => log.log(m));
+  registerSessionsIpc(() => currentHarnessPort, (m) => log.log(m));
+  registerUsageIpc(() => currentHarnessPort, (m) => log.log(m));
+  registerLogViewerIpc({
+    desktopLog: paths.desktopLog,
+    harnessLog: paths.harnessLog,
+    logsDir: paths.logsDir,
+    log: (m) => log.log(m),
+  });
+
   Menu.setApplicationMenu(null); // shell UI lives in the custom title bar
   applyTheme();
+  // "auto" theme: an OS light/dark flip must reach every open window too.
+  nativeTheme.on("updated", () => {
+    if (readSettings().theme === "auto") broadcastTheme();
+  });
   registerShellIpc();
   await launch();
 }
 
-/** Map the saved theme preference onto Electron's native theme source. */
+/**
+ * Apply the theme: pin nativeTheme to the palette's base mode (the embedded
+ * Harness web UI follows it), then push the palette to every window and
+ * refresh the title-bar overlay (same-mode changes fire no nativeTheme event).
+ */
 function applyTheme(): void {
-  const theme = readSettings().theme;
-  nativeTheme.themeSource = theme === "auto" ? "system" : theme;
+  nativeTheme.themeSource = themeSourceFor(readSettings().theme);
+  broadcastTheme();
+  if (mainWindow && !mainWindow.isDestroyed()) applyTitleBarOverlay(mainWindow);
 }
 
 /**
@@ -146,6 +322,7 @@ function ensureHarnessReady(): void {
 
 /** Allocate a port, spawn the harness, wait for it to be ready. */
 async function startHarness(): Promise<number> {
+  events.stop(); // any previous stream pair belongs to a dead port
   const port = await findFreePort();
   log.log("allocated port:", port);
   setStatus(t("splashStartHarness"));
@@ -163,6 +340,7 @@ async function startHarness(): Promise<number> {
   await harness.waitForReady();
   currentHarnessPort = port;
   log.log("harness ready on port", port);
+  void startEventWatcher(port);
   return port;
 }
 
@@ -180,6 +358,34 @@ async function launch(): Promise<void> {
     win.on("closed", () => {
       if (mainWindow === win) mainWindow = null;
     });
+
+    // With the tray up, closing the window hides it instead of quitting: the
+    // harness process (and every running session) survives until an explicit
+    // quit from the tray. Without a tray we must not hide — the window would
+    // be unreachable.
+    win.on("close", (event) => {
+      if (quitting || !tray?.available || !readSettings().closeToTray) return;
+      event.preventDefault();
+      win.hide();
+      tray.notifyHiddenOnce();
+    });
+
+    // Desktop integration comes up only after the main window exists.
+    tray = new TrayManager(showMainWindow, () => app.quit());
+    try {
+      tray.create(trayIconPath(), {
+        tooltip: t("trayTooltip"),
+        showLabel: t("trayShow"),
+        quitLabel: t("btnQuit"),
+        balloonTitle: t("trayBalloonTitle"),
+        balloonBody: t("trayBalloonBody"),
+      });
+    } catch (err) {
+      log.log("tray unavailable, close = quit:", String(err));
+      tray = null;
+    }
+    applyGlobalShortcut();
+    applyAutoLaunch();
 
     // The shell page is local and fixed; any <webview> attached to it must be
     // locked to our own harness server (no preload, no node, sandboxed guest).
@@ -231,6 +437,10 @@ async function launch(): Promise<void> {
       splash = null;
       void maybeCheckForUpdate(false);
       void maybeCheckShellUpdate(false);
+      void maybeOpenOnboarding();
+      // Windows cold-start deep link: the OS launched us with the URL in argv.
+      const coldLink = extractDeepLink(process.argv);
+      if (coldLink) void handleDeepLink(coldLink);
     });
     if (process.env.DSH_DEVTOOLS || readSettings().devtoolsOnStart) {
       win.webContents.openDevTools({ mode: "detach" });
@@ -267,6 +477,78 @@ async function launch(): Promise<void> {
   }
 }
 
+// --- onboarding ----------------------------------------------------------------
+
+let onboardingAutoChecked = false;
+
+/** Once per run: if the harness declares unconfigured credentials and the user
+ * never dismissed the wizard, open it over the main window. */
+async function maybeOpenOnboarding(): Promise<void> {
+  if (onboardingAutoChecked) return;
+  onboardingAutoChecked = true;
+  if (!shouldAutoOpenOnboarding()) return;
+  try {
+    const status = await fetchCredentialStatus(currentHarnessPort);
+    if (status.ok && status.items.some((c) => !c.configured)) {
+      openOnboardingWindow(join(__dirname, "preload-onboarding.js"));
+    }
+  } catch (err) {
+    log.log("onboarding check failed:", String(err));
+  }
+}
+
+// --- deepwharf:// protocol -----------------------------------------------------
+
+function extractDeepLink(args: readonly string[]): string | null {
+  for (const a of args) {
+    if (a.startsWith("deepwharf:")) return a;
+  }
+  return null;
+}
+
+/**
+ * Show the window (and, for ?prompt=…, offer to create a session and send the
+ * prompt through the official RPC). A deep link can originate from any web
+ * page, so it is NEVER auto-sent: the user sees the exact prompt first and
+ * "Send" is not even the default button.
+ */
+async function handleDeepLink(url: string): Promise<void> {
+  log.log("deep link:", url.slice(0, 200));
+  const intent = parseDeepLink(url);
+  showMainWindow();
+  if (!intent || intent.prompt === undefined) return; // bare "show me" link
+  if (!mainWindow || mainWindow.isDestroyed()) return;
+
+  const answer = dialog.showMessageBoxSync(mainWindow, {
+    type: "question",
+    title: t("deeplinkTitle"),
+    message: t("deeplinkMessage"),
+    detail: intent.prompt.slice(0, 500) + (intent.prompt.length > 500 ? "…" : ""),
+    buttons: [t("deeplinkSend"), t("btnLater")],
+    defaultId: 1, // cancel is the safe default for an untrusted origin
+  });
+  if (answer !== 0) return;
+
+  try {
+    const created = (await harnessRpc(currentHarnessPort, "session.create", intent.cwd ? { cwd: intent.cwd } : {})) as {
+      sessionId?: unknown;
+    };
+    const sessionId = typeof created?.sessionId === "string" ? created.sessionId : "";
+    if (!sessionId) throw new Error("session.create returned no sessionId");
+    await harnessRpc(currentHarnessPort, "session.prompt", {
+      sessionId,
+      mode: "queue",
+      content: [{ type: "text", text: intent.prompt }],
+    });
+    showMainWindow();
+  } catch (err) {
+    log.log("deep link send failed:", String(err));
+    if (mainWindow && !mainWindow.isDestroyed()) {
+      dialog.showErrorBox(t("deeplinkTitle"), t("deeplinkFailed", { error: String(err) }));
+    }
+  }
+}
+
 // --- failure / crash handling ----------------------------------------------
 
 function fail(message: string, detail = ""): void {
@@ -279,6 +561,8 @@ function onHarnessExit(info: HarnessExitInfo): void {
   if (info.expected) return;
   if (quitting || cleanedUp || suppressCrashDialog) return;
   if (!mainWindow || mainWindow.isDestroyed()) return; // startup path — waitForReady() throws and fail() shows the error
+  // The window may be hidden in the tray; a crash dialog nobody can see is a hang.
+  showMainWindow();
 
   const choice = dialog.showMessageBoxSync(mainWindow, {
     type: "error",
@@ -330,6 +614,7 @@ function updateHarnessPort(port: number): void {
 
 /** Stop and drop the current harness manager (used inside update transactions). */
 async function stopHarnessQuietly(): Promise<void> {
+  events.stop();
   const mgr = harness;
   harness = null;
   if (mgr) await mgr.stop();
@@ -580,6 +865,18 @@ function registerShellIpc(): void {
     assertShellSender(e);
     return openSettingsWindow();
   });
+  ipcMain.handle("shell:openSessions", (e) => {
+    assertShellSender(e);
+    return openSessionsWindow(join(__dirname, "preload-sessions.js"));
+  });
+  ipcMain.handle("shell:openUsage", (e) => {
+    assertShellSender(e);
+    return openUsageWindow(join(__dirname, "preload-usage.js"));
+  });
+  ipcMain.handle("shell:openPluginManager", (e) => {
+    assertShellSender(e);
+    return openPluginManagerWindow(join(__dirname, "preload-plugin-manager.js"));
+  });
   ipcMain.handle("shell:openHarnessSettings", (e) => {
     assertShellSender(e);
     return openHarnessSettingsWindow(
@@ -614,11 +911,22 @@ function registerShellIpc(): void {
     const sanitized = sanitizeSettingsPatch(patch);
     const next = updateSettings(sanitized);
     if (sanitized.theme !== undefined) applyTheme();
+    if (sanitized.globalShortcutEnabled !== undefined) applyGlobalShortcut();
+    if (sanitized.autoLaunch !== undefined) applyAutoLaunch();
     return next;
   });
   ipcMain.handle("settings:openLogs", (e) => {
     assertSettingsSender(e);
     return shell.openPath(paths.logsDir);
+  });
+  ipcMain.handle("settings:openLogViewer", (e) => {
+    assertSettingsSender(e);
+    return openLogViewerWindow(join(__dirname, "preload-log-viewer.js"), {
+      desktopLog: paths.desktopLog,
+      harnessLog: paths.harnessLog,
+      logsDir: paths.logsDir,
+      log: (m) => log.log(m),
+    });
   });
   ipcMain.handle("settings:clearLogs", (e) => {
     assertSettingsSender(e);
@@ -653,6 +961,10 @@ app.on("before-quit", (event) => {
   harness = null;
   const done = () => {
     cleanedUp = true;
+    events.stop();
+    tray?.destroy();
+    tray = null;
+    globalShortcut.unregisterAll();
     log.log("cleanup done, quitting");
     app.quit();
   };
