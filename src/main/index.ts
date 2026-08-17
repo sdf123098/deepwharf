@@ -40,6 +40,7 @@ import { registerUsageIpc, notifyUsageProjection } from "./usage-panel";
 import { registerPluginManagerIpc } from "./plugin-manager";
 import { openLogViewerWindow, registerLogViewerIpc } from "./log-viewer";
 import { broadcastTheme, themeSourceFor } from "./theme";
+import { fontsCss, installFontProtocol } from "./fonts";
 import { setSettingsPageSender } from "./settings-page";
 import { ensureCompanion } from "./companion";
 import {
@@ -335,6 +336,7 @@ if (!gotLock) {
 async function bootstrap(): Promise<void> {
   paths = resolvePaths();
   log = new Logger(paths.desktopLog);
+  installFontProtocol(); // dsw-font:// serves the bundled HarmonyOS Sans SC
   log.log("=== DeepSeek Harness Desktop starting ===");
   log.log("desktop:", app.getVersion(), "| electron:", process.versions.electron, "| node:", process.versions.node, "| chrome:", process.versions.chrome);
   log.log("os:", `${process.platform} ${process.arch}`);
@@ -615,7 +617,13 @@ async function launch(): Promise<void> {
       });
       // The companion reintroduces itself per load; a fresh snapshot generation
       // is what replays stored extra/third-party theme selections.
-      guest.on("dom-ready", () => handleWebuiLoaded());
+      guest.on("dom-ready", () => {
+        handleWebuiLoaded();
+        // Bundled font faces (dsw-font://) must be declared in the guest too —
+        // the web UI's own stylesheets cannot see our resources.
+        const css = fontsCss();
+        if (css) guest.insertCSS(css).catch(() => {});
+      });
       guest.on("will-navigate", (event, url) => {
         let u: URL;
         try {

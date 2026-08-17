@@ -119,3 +119,6 @@ rebuilds keep using the committed source.
 ## License
 
 MIT — DeepWharf is an independent wrapper; DeepSeek Harness remains under its own license.
+
+Bundled third-party components (including the HarmonyOS Sans SC font) are listed in
+[THIRD_PARTY_NOTICES.md](./THIRD_PARTY_NOTICES.md).

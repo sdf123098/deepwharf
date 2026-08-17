@@ -76,6 +76,10 @@
   （窗口显隐回调直连托盘）；托盘项从「翻转 petEnabled 设置」改为**直接切换桌宠窗口
   显隐**，一次点击即显示；从设置页关闭桌宠后点托盘「显示桌宠」会先重新启用
 - 界面分割线清理（仅保留侧边栏自身的分隔）
+- **默认字体 HarmonyOS Sans SC 现在随应用内置** — 之前仅按名称引用系统字体，未安装该
+  字体的机器会静默回退；现打包全套 6 个字重（Thin/Light/Regular/Medium/Bold/Black）经
+  `dsw-font://` 协议供外壳页面与内嵌 Web UI 使用（按 HarmonyOS Sans 字体许可协议原样
+  分发，见 THIRD_PARTY_NOTICES.md）
 
 ### 变更 / Changed
 

@@ -1,0 +1,42 @@
+/* Bundled HarmonyOS Sans SC — served to the shell pages and the embedded
+ * Harness webview via the dsw-font:// scheme (see src/main/fonts.ts).
+ * The family name must match the fontFamily setting so the CSS font-family
+ * resolves to these faces on machines that do not have the font installed.
+ * Font files ship under resources/fonts/HarmonyOS_Sans_SC (unmodified,
+ * per the HarmonyOS Sans Fonts License Agreement). */
+@font-face {
+  font-family: "HarmonyOS Sans SC";
+  src: url("dsw-font://font/HarmonyOS_Sans_SC_Thin.ttf") format("truetype");
+  font-weight: 100;
+  font-style: normal;
+}
+@font-face {
+  font-family: "HarmonyOS Sans SC";
+  src: url("dsw-font://font/HarmonyOS_Sans_SC_Light.ttf") format("truetype");
+  font-weight: 300;
+  font-style: normal;
+}
+@font-face {
+  font-family: "HarmonyOS Sans SC";
+  src: url("dsw-font://font/HarmonyOS_Sans_SC_Regular.ttf") format("truetype");
+  font-weight: 400;
+  font-style: normal;
+}
+@font-face {
+  font-family: "HarmonyOS Sans SC";
+  src: url("dsw-font://font/HarmonyOS_Sans_SC_Medium.ttf") format("truetype");
+  font-weight: 500;
+  font-style: normal;
+}
+@font-face {
+  font-family: "HarmonyOS Sans SC";
+  src: url("dsw-font://font/HarmonyOS_Sans_SC_Bold.ttf") format("truetype");
+  font-weight: 700;
+  font-style: normal;
+}
+@font-face {
+  font-family: "HarmonyOS Sans SC";
+  src: url("dsw-font://font/HarmonyOS_Sans_SC_Black.ttf") format("truetype");
+  font-weight: 900;
+  font-style: normal;
+}

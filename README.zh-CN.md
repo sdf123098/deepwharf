@@ -104,3 +104,5 @@ npm run dist               # 打包 NSIS + Portable -> release/
 ## 许可证
 
 MIT —— DeepWharf 为独立封装；DeepSeek Harness 仍按其自身许可证发布。
+
+内置第三方组件（含 HarmonyOS Sans SC 字体）见 [THIRD_PARTY_NOTICES.md](./THIRD_PARTY_NOTICES.md)。

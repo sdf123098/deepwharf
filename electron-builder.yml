@@ -30,6 +30,10 @@ files:
   - resources/log-viewer.html
   - resources/log-viewer.js
   - resources/shell-theme.js
+  - resources/fonts.css
+  # Bundled HarmonyOS Sans SC (all weights) + its license; served via
+  # dsw-font:// to both the shell pages and the embedded webview.
+  - resources/fonts/**/*
   - resources/pet.html
   - resources/pet.js
   - resources/webui-preload.js

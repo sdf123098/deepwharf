@@ -4,6 +4,14 @@
 "use strict";
 
 (function () {
+  // Register the bundled HarmonyOS Sans SC faces (resources/fonts.css, served
+  // via dsw-font://) so the configured font-family resolves on this machine.
+  // Pages allow same-origin stylesheets through style-src 'self'.
+  const fonts = document.createElement("link");
+  fonts.rel = "stylesheet";
+  fonts.href = "fonts.css";
+  document.head.appendChild(fonts);
+
   function apply(payload) {
     if (!payload || !payload.colors) return;
     const style = document.documentElement.style;
