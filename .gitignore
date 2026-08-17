@@ -6,6 +6,10 @@ release/
 .smoke/
 *.log
 
+# Local agent scratch dir and smoke-test stdout dumps — not project files.
+.zcode/
+.smoke*.txt
+
 # Embedded runtimes are fetched by scripts/prepare-*.mjs — not committed.
 resources/runtime/
 resources/harness/

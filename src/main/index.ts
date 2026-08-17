@@ -1,4 +1,5 @@
 import { app, BrowserWindow, dialog, globalShortcut, Notification, shell, ipcMain, Menu, nativeTheme } from "electron";
+import { randomBytes, randomUUID } from "node:crypto";
 import { spawnSync } from "node:child_process";
 import { existsSync, mkdirSync, readdirSync, rmSync, truncateSync } from "node:fs";
 import { join } from "node:path";
@@ -23,9 +24,9 @@ import {
 } from "./harness-update";
 import { semverGt, parseDeepLink } from "./pure";
 import { t, localeForRenderer } from "./i18n";
-import { openPluginStore, registerPluginStoreIpc, type PluginStoreContext } from "./plugin-store";
+import { openPluginStore, registerPluginStoreIpc, setStoreLogSink, type PluginStoreContext } from "./plugin-store";
 import { readSettings, writeSettings, updateSettings, sanitizeSettingsPatch } from "./settings";
-import { openHarnessSettingsWindow, registerHarnessSettingsIpc, harnessRpc } from "./harness-settings";
+import { registerHarnessSettingsIpc, harnessRpc } from "./harness-settings";
 import { TrayManager } from "./tray";
 import { HarnessEventWatcher } from "./harness-events";
 import {
@@ -34,11 +35,32 @@ import {
   registerOnboardingIpc,
   shouldAutoOpenOnboarding,
 } from "./onboarding";
-import { openSessionsWindow, registerSessionsIpc } from "./sessions-browser";
-import { openUsageWindow, registerUsageIpc, notifyUsageProjection } from "./usage-panel";
-import { openPluginManagerWindow, registerPluginManagerIpc } from "./plugin-manager";
+import { normalizeSessions, registerSessionsIpc, type SessionRow } from "./sessions-browser";
+import { registerUsageIpc, notifyUsageProjection } from "./usage-panel";
+import { registerPluginManagerIpc } from "./plugin-manager";
 import { openLogViewerWindow, registerLogViewerIpc } from "./log-viewer";
 import { broadcastTheme, themeSourceFor } from "./theme";
+import { setSettingsPageSender } from "./settings-page";
+import { ensureCompanion } from "./companion";
+import {
+  handleWebuiLoaded,
+  handleWebuiSnapshot,
+  initWebuiTheme,
+  requestWebuiFontSync,
+  requestWebuiThemeSync,
+} from "./webui-theme";
+import {
+  applyPetSettings,
+  hidePet,
+  initPet,
+  notifyPetEvent,
+  notifyPetProjection,
+  notifyPetSessionRemoved,
+  petWindowExists,
+  primePetUsage,
+  showPet,
+} from "./pet";
+import { addApproval, addQuestion, remoteRunning, resolveApproval, startRemote, stopRemote } from "./remote";
 
 let splash: BrowserWindow | null = null;
 let mainWindow: BrowserWindow | null = null;
@@ -98,12 +120,66 @@ const childSessions = new Set<string>();
 /** Last known running state per session; a true→false edge means "finished". */
 const runningBySession = new Map<string, boolean>();
 
+/** Sidebar session rows (non-subagent, non-blank, non-archived); pushed to the
+ * shell page on change. Mirrors what the web UI's own sidebar would show. */
+let sidebarSessions: SessionRow[] = [];
+let sidebarWorkspaces: unknown[] = [];
+let archivedSessionIds = new Set<string>();
+
+async function refreshArchived(): Promise<void> {
+  try {
+    const w = (await harnessRpc(currentHarnessPort, "workspace.list", {})) as {
+      archivedSessionIds?: unknown;
+      items?: unknown;
+    };
+    archivedSessionIds = new Set(
+      Array.isArray(w?.archivedSessionIds)
+        ? w.archivedSessionIds.filter((x): x is string => typeof x === "string")
+        : [],
+    );
+    if (Array.isArray(w?.items)) sidebarWorkspaces = w.items;
+  } catch {
+    // harness down — keep the last set
+  }
+}
+
+function pushSidebarSessions(): void {
+  if (mainWindow && !mainWindow.isDestroyed()) {
+    mainWindow.webContents.send("shell:sessions", {
+      sessions: sidebarSessions,
+      workspaces: sidebarWorkspaces,
+    });
+  }
+}
+
+async function refreshSidebarSessions(): Promise<void> {
+  await refreshArchived();
+  try {
+    sidebarSessions = normalizeSessions(await harnessRpc(currentHarnessPort, "session.list", {})).filter(
+      (s) => !s.blank && !archivedSessionIds.has(s.sessionId),
+    );
+  } catch {
+    // harness down — keep the last list
+  }
+  pushSidebarSessions();
+}
+
+let sidebarRefreshTimer: NodeJS.Timeout | null = null;
+function scheduleSidebarRefresh(): void {
+  if (sidebarRefreshTimer) clearTimeout(sidebarRefreshTimer);
+  sidebarRefreshTimer = setTimeout(() => {
+    sidebarRefreshTimer = null;
+    void refreshSidebarSessions();
+  }, 400);
+}
+
 /** Baseline the edge detector with session.list so a finish that races the
  * watcher's connect is not misread as "never ran". */
 async function primeSessionBaseline(port: number): Promise<void> {
   runningBySession.clear();
   childSessions.clear();
   try {
+    await refreshArchived();
     const value = (await harnessRpc(port, "session.list", {})) as {
       items?: Array<{ sessionId: string; running: boolean; parentSessionId?: string; origin?: string }>;
     };
@@ -113,6 +189,10 @@ async function primeSessionBaseline(port: number): Promise<void> {
         childSessions.add(it.sessionId);
       }
     }
+    sidebarSessions = normalizeSessions(value).filter(
+      (s) => !s.blank && !archivedSessionIds.has(s.sessionId),
+    );
+    pushSidebarSessions();
   } catch (err) {
     log.log("session.list baseline failed:", String(err)); // watcher still works, edges start from first frame
   }
@@ -143,8 +223,16 @@ function onSessionStatus(sessionId: string, running: boolean): void {
   if (childSessions.has(sessionId)) return;
   const was = runningBySession.get(sessionId);
   runningBySession.set(sessionId, running);
+  // mirror into the sidebar cache without a full refetch
+  const row = sidebarSessions.find((s) => s.sessionId === sessionId);
+  if (row && row.running !== running) {
+    row.running = running;
+    row.updatedAt = Date.now();
+    pushSidebarSessions();
+  }
   if (was === true && !running) {
     desktopNotify(t("notifyDoneTitle"), t("notifyDoneBody"));
+    notifyPetEvent("done");
   }
 }
 
@@ -158,25 +246,63 @@ async function startEventWatcher(port: number): Promise<void> {
     onAgentError: (sessionId, message) => {
       if (childSessions.has(sessionId)) return;
       desktopNotify(t("notifyErrorTitle"), t("notifyErrorBody", { message: message.slice(0, 200) }));
+      notifyPetEvent("error");
     },
-    onApproval: (sessionId, toolName) => {
+    onApproval: (sessionId, toolName, details) => {
       if (childSessions.has(sessionId)) return;
       desktopNotify(t("notifyApprovalTitle"), t("notifyApprovalBody", { tool: toolName || "?" }));
+      if (details.approvalId) {
+        addApproval({
+          approvalId: details.approvalId,
+          sessionId,
+          toolName: toolName || "?",
+          callId: details.callId,
+          reason: details.reason,
+          at: Date.now(),
+        });
+      }
     },
-    onQuestion: (sessionId, count) => {
+    onApprovalResolved: (sessionId, approvalId, outcome) => {
+      resolveApproval(approvalId, outcome);
+    },
+    onQuestion: (sessionId, questions) => {
       if (childSessions.has(sessionId)) return;
+      const count = questions.length || 1;
       desktopNotify(t("notifyQuestionTitle"), t("notifyQuestionBody", { count }));
+      addQuestion({
+        key: `${sessionId}:${questions.map((q) => q.id ?? "").join(",")}:${Date.now()}`,
+        sessionId,
+        questions: questions.map((q) => ({
+          id: typeof q.id === "string" ? q.id : "",
+          prompt: typeof q.prompt === "string" ? q.prompt : undefined,
+          options: Array.isArray(q.options) ? (q.options as string[]) : undefined,
+        })),
+        at: Date.now(),
+      });
     },
     onSessionAdded: (sessionId, isSubagent) => {
       if (isSubagent) childSessions.add(sessionId);
+      else scheduleSidebarRefresh();
     },
     onSessionRemoved: (sessionId) => {
       childSessions.delete(sessionId);
       runningBySession.delete(sessionId);
+      notifyPetSessionRemoved(sessionId);
+      scheduleSidebarRefresh();
     },
     onProjection: (sessionId, key, value) => {
-      // token-meter projections feed the usage panel; everything else ignored.
+      // token-meter projections feed the usage panel and the pet's sign.
       notifyUsageProjection(sessionId, key, value);
+      if (!childSessions.has(sessionId)) {
+        notifyPetProjection(sessionId, key, value);
+        if (key === "title" && typeof value === "string") {
+          const row = sidebarSessions.find((s) => s.sessionId === sessionId);
+          if (row && row.title !== value) {
+            row.title = value;
+            pushSidebarSessions();
+          }
+        }
+      }
     },
   }, (m) => log.log(`events: ${m}`));
 }
@@ -250,6 +376,7 @@ async function bootstrap(): Promise<void> {
     } satisfies PluginStoreContext,
     onRestartHarness,
   );
+  setStoreLogSink((m) => log.log(m));
   registerPluginManagerIpc(
     {
       nodeExecutable: paths.nodeExecutable,
@@ -279,6 +406,51 @@ async function bootstrap(): Promise<void> {
     log: (m) => log.log(m),
   });
 
+  // Frameless sub-windows drive their own chrome (resources/chrome.js).
+  ipcMain.on("window:close", (e) => {
+    BrowserWindow.fromWebContents(e.sender)?.close();
+  });
+  ipcMain.on("window:minimize", (e) => {
+    BrowserWindow.fromWebContents(e.sender)?.minimize();
+  });
+
+  // Remote control server (opt-in via settings; harness stays loopback-only).
+  startRemote(() => currentHarnessPort, (m) => log.log(m));
+
+  // Companion plugin (shell themes for the web UI + the usage line): install
+  // before the first harness start so it is loaded right away; later changes
+  // (shell upgrades) take effect on the next harness start.
+  const companion = ensureCompanion({
+    nodeExecutable: paths.nodeExecutable,
+    harnessEntry: paths.harnessEntry,
+    dshHome: paths.dshHome,
+    log: (m) => log.log(m),
+  });
+  if (companion.changed) log.log("companion updated — activates on the next harness start");
+  if (!companion.installed) log.log(`companion unavailable: ${companion.reason ?? "?"}`);
+
+  // Web UI theme bridge + desktop pet wiring.
+  initWebuiTheme({
+    getPort: () => currentHarnessPort,
+    log: (m) => log.log(m),
+    sendCommand: (cmd) => {
+      if (mainWindow && !mainWindow.isDestroyed()) {
+        mainWindow.webContents.send("shell:webui-command", cmd);
+      }
+    },
+  });
+  initPet({
+    showMain: showMainWindow,
+    log: (m) => log.log(m),
+    getMainBounds: () => {
+      if (mainWindow && !mainWindow.isDestroyed()) return mainWindow.getNormalBounds();
+      return { x: 0, y: 0, width: 0, height: 0 };
+    },
+    // Keep the tray menu's pet item honest when the pet is hidden/closed
+    // (right-click hide, settings toggle) without waiting for a re-sync.
+    onPetVisibleChange: (visible) => tray?.setPetVisible(visible),
+  });
+
   Menu.setApplicationMenu(null); // shell UI lives in the custom title bar
   applyTheme();
   // "auto" theme: an OS light/dark flip must reach every open window too.
@@ -293,11 +465,19 @@ async function bootstrap(): Promise<void> {
  * Apply the theme: pin nativeTheme to the palette's base mode (the embedded
  * Harness web UI follows it), then push the palette to every window and
  * refresh the title-bar overlay (same-mode changes fire no nativeTheme event).
+ * Web UI theme pushes happen only on explicit user changes (settings:set) —
+ * never here, so startup never clobbers the web UI's own persisted pick.
  */
 function applyTheme(): void {
   nativeTheme.themeSource = themeSourceFor(readSettings().theme);
   broadcastTheme();
   if (mainWindow && !mainWindow.isDestroyed()) applyTitleBarOverlay(mainWindow);
+}
+
+/** Pet toggle entry point: honor the settings, then mirror state in the tray. */
+function syncPet(): void {
+  applyPetSettings();
+  tray?.setPetVisible(petWindowExists());
 }
 
 /**
@@ -341,6 +521,7 @@ async function startHarness(): Promise<number> {
   currentHarnessPort = port;
   log.log("harness ready on port", port);
   void startEventWatcher(port);
+  void primePetUsage(port); // baseline the pet's usage sign
   return port;
 }
 
@@ -371,7 +552,19 @@ async function launch(): Promise<void> {
     });
 
     // Desktop integration comes up only after the main window exists.
-    tray = new TrayManager(showMainWindow, () => app.quit());
+    tray = new TrayManager(showMainWindow, () => app.quit(), () => {
+      // The tray item toggles the pet window itself — not the petEnabled
+      // setting. Otherwise right-click-hiding the pet (which leaves the
+      // setting on) would make the first click just flip the setting off
+      // and the pet would need a second click to come back. Showing also
+      // re-enables the feature if settings had it switched off.
+      if (petWindowExists()) {
+        hidePet();
+      } else {
+        if (!readSettings().petEnabled) updateSettings({ petEnabled: true });
+        showPet();
+      }
+    });
     try {
       tray.create(trayIconPath(), {
         tooltip: t("trayTooltip"),
@@ -379,6 +572,8 @@ async function launch(): Promise<void> {
         quitLabel: t("btnQuit"),
         balloonTitle: t("trayBalloonTitle"),
         balloonBody: t("trayBalloonBody"),
+        petShowLabel: t("petTrayShow"),
+        petHideLabel: t("petTrayHide"),
       });
     } catch (err) {
       log.log("tray unavailable, close = quit:", String(err));
@@ -386,11 +581,13 @@ async function launch(): Promise<void> {
     }
     applyGlobalShortcut();
     applyAutoLaunch();
+    syncPet(); // pet window comes up with the shell (when enabled)
 
     // The shell page is local and fixed; any <webview> attached to it must be
-    // locked to our own harness server (no preload, no node, sandboxed guest).
+    // locked to our own harness server. The guest gets ONLY our bundled
+    // preload (the companion bridge) — never one the page or a plugin chose.
     win.webContents.on("will-attach-webview", (_e, webPreferences, params) => {
-      delete webPreferences.preload;
+      webPreferences.preload = join(__dirname, "..", "..", "resources", "webui-preload.js");
       webPreferences.nodeIntegration = false;
       webPreferences.contextIsolation = true;
       webPreferences.sandbox = true;
@@ -412,6 +609,13 @@ async function launch(): Promise<void> {
     // the guest's main document stays on our own harness server.
     win.webContents.on("did-attach-webview", (_e, guest) => {
       openExternalFromWebContents(guest);
+      // Guest console diagnostics (warnings/errors) surface in the desktop log.
+      guest.on("console-message", (_ce, level, message) => {
+        if (level >= 2) log.log(`webview: ${message}`);
+      });
+      // The companion reintroduces itself per load; a fresh snapshot generation
+      // is what replays stored extra/third-party theme selections.
+      guest.on("dom-ready", () => handleWebuiLoaded());
       guest.on("will-navigate", (event, url) => {
         let u: URL;
         try {
@@ -458,14 +662,7 @@ async function launch(): Promise<void> {
       setTimeout(() => openSettingsWindow(), 2000);
     }
     if (process.env.DSH_TEST_HARNESS_SETTINGS) {
-      setTimeout(
-        () =>
-          openHarnessSettingsWindow(
-            join(__dirname, "preload-harness-settings.js"),
-            localeForRenderer(),
-          ),
-        2000,
-      );
+      setTimeout(() => openSettingsWindow("harness"), 2000);
     }
     if (process.env.DSH_TEST_EXIT) {
       setTimeout(() => app.quit(), 8000);
@@ -739,6 +936,21 @@ function bundledNodeVersion(): string {
   }
 }
 
+/** First non-internal IPv4 on this host (for the remote console URL). */
+function lanAddress(): string {
+  try {
+    const nets = require("node:os").networkInterfaces() as Record<string, Array<{ family: string; address: string; internal: boolean }>>;
+    for (const list of Object.values(nets)) {
+      for (const n of list ?? []) {
+        if (n.family === "IPv4" && !n.internal) return n.address;
+      }
+    }
+  } catch {
+    // fall through
+  }
+  return "127.0.0.1";
+}
+
 function getVersions() {
   return {
     desktop: app.getVersion(),
@@ -748,13 +960,18 @@ function getVersions() {
 }
 
 let settingsWindow: BrowserWindow | null = null;
-function openSettingsWindow(): void {
+/** Open the merged settings page (shell / harness / plugins / usage tabs). */
+function openSettingsWindow(tab = "shell"): void {
   if (settingsWindow && !settingsWindow.isDestroyed()) {
     settingsWindow.focus();
     return;
   }
-  settingsWindow = createSettingsWindow(join(__dirname, "preload-settings.js"), localeForRenderer());
+  settingsWindow = createSettingsWindow(join(__dirname, "preload-settings.js"), localeForRenderer(), tab);
+  // The merged page is the authorized sender for the harness-settings,
+  // plugin-manager, and usage IPC surfaces too.
+  setSettingsPageSender(settingsWindow.webContents);
   settingsWindow.on("closed", () => {
+    if (settingsWindow) setSettingsPageSender(null);
     settingsWindow = null;
   });
 }
@@ -865,25 +1082,126 @@ function registerShellIpc(): void {
     assertShellSender(e);
     return openSettingsWindow();
   });
-  ipcMain.handle("shell:openSessions", (e) => {
+  // Session sidebar: cached list + open/new (open routes through the companion
+  // bridge so the embedded web UI switches to the session).
+  ipcMain.handle("shell:sessions", (e) => {
     assertShellSender(e);
-    return openSessionsWindow(join(__dirname, "preload-sessions.js"));
+    return sidebarSessions;
   });
-  ipcMain.handle("shell:openUsage", (e) => {
+  ipcMain.handle("shell:session-open", (e, id: unknown) => {
     assertShellSender(e);
-    return openUsageWindow(join(__dirname, "preload-usage.js"));
+    if (typeof id !== "string" || id === "" || id.length > 200) return { ok: false };
+    if (mainWindow && !mainWindow.isDestroyed()) {
+      mainWindow.webContents.send("shell:webui-command", {
+        source: "deepwharf-shell",
+        type: "open-session",
+        id,
+      });
+    }
+    return { ok: true };
   });
-  ipcMain.handle("shell:openPluginManager", (e) => {
+  ipcMain.handle("shell:session-new", async (e, workspaceId: unknown) => {
     assertShellSender(e);
-    return openPluginManagerWindow(join(__dirname, "preload-plugin-manager.js"));
+    try {
+      const created = (await harnessRpc(
+        currentHarnessPort,
+        "session.create",
+        typeof workspaceId === "string" && workspaceId !== "" ? { workspaceId } : {},
+      )) as {
+        sessionId?: unknown;
+      };
+      const sessionId = typeof created?.sessionId === "string" ? created.sessionId : "";
+      if (sessionId) await refreshSidebarSessions();
+      return sessionId;
+    } catch (err) {
+      log.log(`session.create failed: ${String(err)}`);
+      return "";
+    }
   });
-  ipcMain.handle("shell:openHarnessSettings", (e) => {
+  // Open the harness's own settings panel (migrated from the hidden web UI
+  // sidebar) via the companion bridge.
+  ipcMain.handle("shell:webui-settings", (e) => {
     assertShellSender(e);
-    return openHarnessSettingsWindow(
-      join(__dirname, "preload-harness-settings.js"),
-      localeForRenderer(),
-    );
+    if (mainWindow && !mainWindow.isDestroyed()) {
+      mainWindow.webContents.send("shell:webui-command", {
+        source: "deepwharf-shell",
+        type: "open-webui-settings",
+      });
+    }
+    return { ok: true };
   });
+  // Sidebar management actions (migrated from the web UI sidebar): workspace
+  // create/rename/delete, session archive/rename/fork.
+  const sidebarAction = async (e: Electron.IpcMainInvokeEvent, method: string, payload: unknown) => {
+    assertShellSender(e);
+    try {
+      const value = await harnessRpc(currentHarnessPort, method, payload);
+      await refreshSidebarSessions();
+      return { ok: true, value };
+    } catch (err) {
+      log.log(`${method} failed: ${String(err)}`);
+      return { ok: false, error: err instanceof Error ? err.message : String(err) };
+    }
+  };
+  // Native folder picker for the sidebar's "new workspace" flow — the shell
+  // page has no webview-granted file access, so the dialog runs in the main
+  // process. The OS dialog title/defaults stay localized out of the box.
+  ipcMain.handle("shell:pick-directory", async (e) => {
+    assertShellSender(e);
+    try {
+      const win = BrowserWindow.fromWebContents(e.sender);
+      const options: Electron.OpenDialogOptions = {
+        properties: ["openDirectory", "createDirectory"],
+      };
+      const r = win
+        ? await dialog.showOpenDialog(win, options)
+        : await dialog.showOpenDialog(options);
+      if (r.canceled || r.filePaths.length === 0) return { ok: false, canceled: true };
+      return { ok: true, path: r.filePaths[0] };
+    } catch (err) {
+      log.log(`pick-directory failed: ${String(err)}`);
+      return { ok: false, canceled: false, error: err instanceof Error ? err.message : String(err) };
+    }
+  });
+  ipcMain.handle("shell:workspace-list", async (e) => {
+    assertShellSender(e);
+    try {
+      await refreshArchived();
+      return { ok: true, workspaces: sidebarWorkspaces, archived: [...archivedSessionIds] };
+    } catch (err) {
+      return { ok: false, error: err instanceof Error ? err.message : String(err) };
+    }
+  });
+  ipcMain.handle("shell:workspace-create", (e, path: unknown) =>
+    sidebarAction(e, "workspace.create", typeof path === "string" ? { path: path.slice(0, 500) } : {}),
+  );
+  ipcMain.handle("shell:workspace-rename", (e, workspaceId: unknown, title: unknown) =>
+    sidebarAction(
+      e,
+      "workspace.rename",
+      typeof workspaceId === "string" && typeof title === "string"
+        ? { workspaceId, title: title.slice(0, 200) }
+        : {},
+    ),
+  );
+  ipcMain.handle("shell:workspace-delete", (e, workspaceId: unknown) =>
+    sidebarAction(e, "workspace.delete", typeof workspaceId === "string" ? { workspaceId } : {}),
+  );
+  ipcMain.handle("shell:session-archive", (e, sessionId: unknown) =>
+    sidebarAction(e, "workspace.archiveSession", typeof sessionId === "string" ? { sessionId } : {}),
+  );
+  ipcMain.handle("shell:session-rename", (e, sessionId: unknown, title: unknown) =>
+    sidebarAction(
+      e,
+      "session.rename",
+      typeof sessionId === "string" && typeof title === "string"
+        ? { sessionId, title: title.slice(0, 300) }
+        : {},
+    ),
+  );
+  ipcMain.handle("shell:session-fork", (e, sessionId: unknown) =>
+    sidebarAction(e, "session.fork", typeof sessionId === "string" ? { sessionId } : {}),
+  );
   ipcMain.handle("shell:checkHarness", (e) => {
     assertShellSender(e);
     return maybeCheckForUpdate(true);
@@ -895,6 +1213,20 @@ function registerShellIpc(): void {
   ipcMain.handle("shell:versions", (e) => {
     assertShellSender(e);
     return getVersions();
+  });
+  // Companion bridge: snapshots in (already relayed by the embedder page).
+  ipcMain.handle("shell:webui-event", (e, payload: unknown) => {
+    assertShellSender(e);
+    if (payload && typeof payload === "object" && !Array.isArray(payload)) {
+      const p = payload as Record<string, unknown>;
+      if (p.type === "snapshot") {
+        handleWebuiSnapshot(payload);
+        applyTheme(); // re-pin nativeTheme / title bar with the fresh palette
+      } else if (p.type === "error") {
+        log.log(`companion: ${typeof p.message === "string" ? p.message : "unknown error"}`);
+      }
+    }
+    return { ok: true };
   });
 
   // Settings window
@@ -910,10 +1242,39 @@ function registerShellIpc(): void {
     assertSettingsSender(e);
     const sanitized = sanitizeSettingsPatch(patch);
     const next = updateSettings(sanitized);
-    if (sanitized.theme !== undefined) applyTheme();
+    if (sanitized.theme !== undefined) {
+      applyTheme();
+      requestWebuiThemeSync(); // explicit user change: drive the web UI too
+    }
+    if (sanitized.fontFamily !== undefined) {
+      broadcastTheme(); // theme payload carries the font to every shell window
+      requestWebuiFontSync();
+    }
     if (sanitized.globalShortcutEnabled !== undefined) applyGlobalShortcut();
     if (sanitized.autoLaunch !== undefined) applyAutoLaunch();
+    if (sanitized.petEnabled !== undefined || sanitized.petSignEnabled !== undefined) syncPet();
+    if (sanitized.remoteEnabled !== undefined || sanitized.remotePort !== undefined) {
+      startRemote(() => currentHarnessPort, (m) => log.log(m));
+    }
     return next;
+  });
+  // Remote control: current status + token management for the settings page.
+  ipcMain.handle("settings:remote-info", (e) => {
+    assertSettingsSender(e);
+    const info = remoteRunning();
+    const lan = lanAddress();
+    return {
+      running: info.running,
+      port: info.port,
+      token: readSettings().remoteToken,
+      url: info.running ? `http://${lan}:${info.port}/` : null,
+    };
+  });
+  ipcMain.handle("settings:remote-token", (e) => {
+    assertSettingsSender(e);
+    const token = randomBytes(24).toString("base64url");
+    updateSettings({ remoteToken: token });
+    return token;
   });
   ipcMain.handle("settings:openLogs", (e) => {
     assertSettingsSender(e);
@@ -962,6 +1323,7 @@ app.on("before-quit", (event) => {
   const done = () => {
     cleanedUp = true;
     events.stop();
+    stopRemote();
     tray?.destroy();
     tray = null;
     globalShortcut.unregisterAll();

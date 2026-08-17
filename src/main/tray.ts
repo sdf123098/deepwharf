@@ -6,6 +6,8 @@ export interface TrayStrings {
   quitLabel: string;
   balloonTitle: string;
   balloonBody: string;
+  petShowLabel: string;
+  petHideLabel: string;
 }
 
 /**
@@ -17,10 +19,12 @@ export class TrayManager {
   private tray: Tray | null = null;
   private notifiedHidden = false;
   private strings: TrayStrings | null = null;
+  private petVisible = false;
 
   constructor(
     private readonly onShow: () => void,
     private readonly onQuit: () => void,
+    private readonly onTogglePet: () => void = () => {},
   ) {}
 
   get available(): boolean {
@@ -34,17 +38,33 @@ export class TrayManager {
     this.strings = s;
     const tray = new Tray(image.resize({ width: 16, height: 16 }));
     tray.setToolTip(s.tooltip);
-    tray.setContextMenu(
-      Menu.buildFromTemplate([
-        { label: s.showLabel, click: () => this.onShow() },
-        { type: "separator" },
-        { label: s.quitLabel, click: () => this.onQuit() },
-      ]),
-    );
+    this.tray = tray;
+    this.rebuildMenu();
     // Left click (and balloon click) restore the window; right click opens the menu.
     tray.on("click", () => this.onShow());
     tray.on("balloon-click", () => this.onShow());
-    this.tray = tray;
+  }
+
+  private rebuildMenu(): void {
+    if (!this.tray || !this.strings) return;
+    this.tray.setContextMenu(
+      Menu.buildFromTemplate([
+        { label: this.strings.showLabel, click: () => this.onShow() },
+        {
+          label: this.petVisible ? this.strings.petHideLabel : this.strings.petShowLabel,
+          click: () => this.onTogglePet(),
+        },
+        { type: "separator" },
+        { label: this.strings.quitLabel, click: () => this.onQuit() },
+      ]),
+    );
+  }
+
+  /** Reflect the pet window's presence in the tray menu label. */
+  setPetVisible(visible: boolean): void {
+    if (this.petVisible === visible) return;
+    this.petVisible = visible;
+    this.rebuildMenu();
   }
 
   /** One-time balloon the first time the window is hidden, so the keep-alive

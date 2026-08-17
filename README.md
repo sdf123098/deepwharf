@@ -22,6 +22,22 @@ DeepWharf (Electron)
 - **Zero-dependency install** — bundled Node.js runtime + vendored Harness; works offline.
 - **Native desktop shell** — single merged title bar (logo + Plugin Store + Settings), themable
   (follows system light/dark), localized (简体中文 / English).
+- **Theme sync to the web UI** — shell themes drive the embedded Harness UI through the
+  official `ui-theme` settings RPC; the bundled `deepwharf-companion` plugin registers the
+  extra palettes (Midnight / Forest / Warm / Contrast) inside the web UI and bridges every
+  theme plugin's themes into the shell picker — change the theme on either side and both follow.
+- **Usage, in text** — the companion adds a live usage line above the composer
+  (input / output / cache hit / context occupancy) from the official token-meter projections.
+- **Codex-style main window** — a full-height session sidebar that fully replaces the web
+  UI's own sidebar (hidden via an !important stylesheet rule): workspace-first session
+  management (create/rename/delete workspaces, rename/duplicate/archive conversations),
+  click-to-switch, icon+text actions, and a collapsed-rail expand handle (Ctrl+Shift+S).
+- **Remote control (LAN)** — an opt-in, token-authenticated web console: view/create
+  sessions, send prompts, interrupt runs, switch models, approve tool calls, answer
+  questions, and stream live events from any device on your network.
+- **Desktop pet** — an interactive, always-on-top mascot (drag, click reactions, speech
+  bubbles); it can hold a live usage sign. Regenerate the cutout from any artwork with
+  `npm run pet <png>`.
 - **Plugin Store** — browse the `dsh-plugin` ecosystem (npm registry) and install via the official
   `dsh plugin` mechanism (bundled pnpm).
 - **Desktop integration** — closing the window minimizes to the system tray (Harness sessions keep

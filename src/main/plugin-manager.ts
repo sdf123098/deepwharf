@@ -19,6 +19,7 @@ import { join } from "node:path";
 import { localeForRenderer } from "./i18n";
 import { rememberedWindowBounds, trackWindowBounds } from "./window";
 import { themePayload, themeQuery } from "./theme";
+import { isSettingsPageSender, settingsPageSender } from "./settings-page";
 import { runPnpmForward, type PluginStoreContext } from "./plugin-store";
 import { harnessRpc } from "./harness-settings";
 import {
@@ -189,50 +190,16 @@ async function skillsFor(ctx: PluginStoreContext, port: number): Promise<SkillVi
   })).filter((s) => s.name !== "");
 }
 
-// --- window + IPC ---------------------------------------------------------------
-
-let managerWindow: BrowserWindow | null = null;
-
-export function openPluginManagerWindow(preloadPath: string): void {
-  if (managerWindow && !managerWindow.isDestroyed()) {
-    managerWindow.focus();
-    return;
-  }
-  managerWindow = new BrowserWindow({
-    width: 820,
-    height: 660,
-    ...rememberedWindowBounds("pluginManager", { width: 640, height: 480 }),
-    minWidth: 640,
-    minHeight: 440,
-    backgroundColor: themePayload().colors.bg,
-    title: "Plugins",
-    webPreferences: {
-      preload: preloadPath,
-      nodeIntegration: false,
-      contextIsolation: true,
-      sandbox: true,
-    },
-  });
-  trackWindowBounds("pluginManager", managerWindow);
-  managerWindow.loadFile(join(__dirname, "../../resources/plugin-manager.html"), {
-    query: { lang: localeForRenderer(), ...themeQuery() },
-  });
-  managerWindow.setMenu(null);
-  managerWindow.on("closed", () => {
-    managerWindow = null;
-  });
-}
+// --- IPC --------------------------------------------------------------------------
 
 function assertManagerSender(event: Electron.IpcMainInvokeEvent): void {
-  if (!managerWindow || managerWindow.isDestroyed() || event.sender !== managerWindow.webContents) {
+  if (!isSettingsPageSender(event.sender)) {
     throw new Error("unauthorized IPC sender");
   }
 }
 
 function sendProgress(line: string): void {
-  if (managerWindow && !managerWindow.isDestroyed()) {
-    managerWindow.webContents.send("plugin-manager:progress", line);
-  }
+  settingsPageSender()?.send("plugin-manager:progress", line);
 }
 
 /** One official verb (remove/update) against an installed dependency name. */

@@ -111,6 +111,14 @@ const zhCN = {
   shellNoFeed: "未配置外壳更新源（SHELL_UPDATE_URL）。当前版本 {version}。",
   settingsSaved: "已保存，部分设置重启后生效。",
   btnClose: "关闭",
+
+  petTrayShow: "显示桌宠",
+  petTrayHide: "隐藏桌宠",
+  petMenuSign: "用量牌子",
+  petMenuOpen: "打开 DeepWharf",
+  petMenuHide: "隐藏桌宠",
+  settingsPet: "桌面宠物（互动 · 可举牌显示用量）",
+  settingsPetSign: "宠物举牌显示用量统计",
 };
 
 const enUS: Record<keyof typeof zhCN, string> = {
@@ -223,6 +231,14 @@ const enUS: Record<keyof typeof zhCN, string> = {
   shellNoFeed: "No shell update feed configured (SHELL_UPDATE_URL). Current version {version}.",
   settingsSaved: "Saved. Some settings apply after a restart.",
   btnClose: "Close",
+
+  petTrayShow: "Show the pet",
+  petTrayHide: "Hide the pet",
+  petMenuSign: "Usage sign",
+  petMenuOpen: "Open DeepWharf",
+  petMenuHide: "Hide the pet",
+  settingsPet: "Desktop pet (interactive · can hold a usage sign)",
+  settingsPetSign: "Pet holds the usage sign",
 };
 
 export type I18nKey = keyof typeof zhCN;

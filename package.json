@@ -1,7 +1,7 @@
 {
   "name": "deepwharf",
   "productName": "DeepWharf",
-  "version": "0.4.0",
+  "version": "0.5.0",
   "description": "DeepWharf — a desktop home for DeepSeek Harness. Double-click to run dsh web as a native app.",
   "main": "dist/main/index.js",
   "author": "DeepWharf Contributors",
@@ -17,7 +17,8 @@
     "prune": "node scripts/prune-harness.mjs",
     "dist": "tsc && electron-builder --win",
     "test": "tsc && node --test \"test/*.test.cjs\"",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "pet": "node scripts/make-pet.mjs"
   },
   "devDependencies": {
     "@types/semver": "^7.8.0",

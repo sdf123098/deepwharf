@@ -1,0 +1,81 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta http-equiv="Content-Security-Policy" content="default-src 'self'; style-src 'unsafe-inline'; img-src 'self'; script-src 'self'">
+<style>
+  html, body { height: 100%; margin: 0; background: transparent; overflow: hidden;
+    font-family: system-ui, "Segoe UI", "Microsoft YaHei", sans-serif; user-select: none; }
+  #pet { position: absolute; bottom: 0; left: 50%; transform: translateX(-50%);
+    height: 86%; max-width: 96%; cursor: grab; filter: drop-shadow(0 6px 10px rgba(0,0,0,.28));
+    will-change: transform; }
+  #pet:active { cursor: grabbing; }
+
+  /* idle life: gentle bob with a faint sway */
+  #pet.idle { animation: dw-bob 3.4s ease-in-out infinite; }
+  @keyframes dw-bob {
+    0%, 100% { transform: translateX(-50%) translateY(0) rotate(-0.6deg); }
+    50%      { transform: translateX(-50%) translateY(-7px) rotate(0.8deg); }
+  }
+  #pet.lean-in  { animation: dw-lean-in .35s ease-out forwards; }
+  @keyframes dw-lean-in { to { transform: translateX(-50%) translateY(-4px) scale(1.03) rotate(0deg); } }
+
+  /* click reaction */
+  #pet.pop { animation: dw-pop .5s cubic-bezier(.3,1.6,.5,1); }
+  @keyframes dw-pop {
+    0%   { transform: translateX(-50%) scale(1, 1); }
+    30%  { transform: translateX(-50%) scale(1.08, .9) translateY(4px); }
+    60%  { transform: translateX(-50%) scale(.96, 1.06) translateY(-6px); }
+    100% { transform: translateX(-50%) scale(1, 1); }
+  }
+  /* task finished */
+  #pet.jump { animation: dw-jump .8s cubic-bezier(.4,0,.2,1); }
+  @keyframes dw-jump {
+    0%, 100% { transform: translateX(-50%) translateY(0); }
+    30%      { transform: translateX(-50%) translateY(-26px) rotate(-4deg); }
+    55%      { transform: translateX(-50%) translateY(0) scale(1.04, .94); }
+    75%      { transform: translateX(-50%) translateY(-8px); }
+  }
+  /* error */
+  #pet.shake { animation: dw-shake .6s ease-in-out; }
+  @keyframes dw-shake {
+    0%, 100% { transform: translateX(-50%) rotate(0); }
+    20% { transform: translateX(-50%) rotate(-6deg); }
+    40% { transform: translateX(-50%) rotate(5deg); }
+    60% { transform: translateX(-50%) rotate(-4deg); }
+    80% { transform: translateX(-50%) rotate(2deg); }
+  }
+  /* dragging: pause the idle loop, swing slightly with movement */
+  #pet.drag { animation: dw-drag .4s ease-out forwards; }
+  @keyframes dw-drag { to { transform: translateX(-50%) rotate(3deg) scale(1.02); } }
+
+  /* usage sign: a small card the pet holds up */
+  #sign { position: absolute; top: 6px; right: 0; max-width: 72%;
+    background: #fffdf6; color: #2c2a26; border: 2px solid #d8c9a8; border-radius: 10px;
+    padding: 7px 10px 8px; font-size: 12px; line-height: 1.5; font-variant-numeric: tabular-nums;
+    transform: rotate(-3deg); box-shadow: 0 4px 10px rgba(0,0,0,.22);
+    transition: opacity .25s ease, transform .25s ease; }
+  #sign::after { content: ""; position: absolute; bottom: -16px; left: 18px; width: 4px; height: 16px;
+    background: #b89b6a; border-radius: 2px; transform: rotate(6deg); }
+  #sign.hidden { opacity: 0; transform: rotate(-3deg) translateY(6px); pointer-events: none; }
+  #sign b { color: #0f5bb5; font-weight: 600; }
+  #sign .empty { color: #8d857a; }
+
+  /* speech bubble */
+  #bubble { position: absolute; top: 2px; left: 4px; max-width: 62%;
+    background: #ffffff; color: #26292f; border-radius: 12px; padding: 6px 11px;
+    font-size: 12.5px; line-height: 1.45; box-shadow: 0 4px 12px rgba(0,0,0,.25);
+    opacity: 0; transform: translateY(6px) scale(.94); transform-origin: 20% 90%;
+    transition: opacity .22s ease, transform .22s cubic-bezier(.3,1.4,.5,1); pointer-events: none; }
+  #bubble.show { opacity: 1; transform: translateY(0) scale(1); }
+  #bubble::after { content: ""; position: absolute; bottom: -6px; left: 16px; width: 12px; height: 12px;
+    background: #ffffff; border-radius: 3px; transform: rotate(45deg); }
+</style>
+</head>
+<body>
+  <img id="pet" class="idle" src="pet/pet.png" alt="DeepWharf pet" draggable="false">
+  <div id="sign" class="hidden"><span id="signText" class="empty">…</span></div>
+  <div id="bubble"></div>
+  <script src="pet.js"></script>
+</body>
+</html>

@@ -13,8 +13,17 @@
 export interface HarnessEventHandlers {
   onSessionStatus(sessionId: string, running: boolean): void;
   onAgentError(sessionId: string, message: string): void;
-  onApproval(sessionId: string, toolName: string): void;
-  onQuestion(sessionId: string, count: number): void;
+  onApproval(
+    sessionId: string,
+    toolName: string,
+    details: { approvalId?: string; callId?: string; reason?: string },
+  ): void;
+  /** A pending approval was resolved (allowed/rejected/cancelled/unavailable). */
+  onApprovalResolved?(sessionId: string, approvalId: string, outcome: string): void;
+  onQuestion(
+    sessionId: string,
+    questions: Array<{ id?: string; prompt?: string; options?: unknown }>,
+  ): void;
   onSessionAdded(sessionId: string, isSubagent: boolean): void;
   onSessionRemoved(sessionId: string): void;
   /** Live session projection updates (dsh-token-meter, title, …). */
@@ -40,6 +49,10 @@ interface MuxFrame {
   key?: unknown;
   value?: unknown;
   seq?: unknown;
+  approvalId?: unknown;
+  callId?: unknown;
+  reason?: unknown;
+  outcome?: unknown;
 }
 
 /** A parsed frame payload: `type` is the discriminant the envelope check guarantees. */
@@ -152,11 +165,31 @@ export class HarnessEventWatcher {
     const sessionId = typeof payload.sessionId === "string" ? payload.sessionId : "";
     switch (payload.type) {
       case "approval/requested":
-        if (sessionId) h.onApproval(sessionId, typeof payload.toolName === "string" ? payload.toolName : "");
+        if (sessionId) {
+          h.onApproval(sessionId, typeof payload.toolName === "string" ? payload.toolName : "", {
+            approvalId: typeof payload.approvalId === "string" ? payload.approvalId : undefined,
+            callId: typeof payload.callId === "string" ? payload.callId : undefined,
+            reason: typeof payload.reason === "string" ? payload.reason : undefined,
+          });
+        }
+        break;
+      case "approval/resolved":
+        if (sessionId && h.onApprovalResolved) {
+          h.onApprovalResolved(
+            sessionId,
+            typeof payload.approvalId === "string" ? payload.approvalId : "",
+            typeof payload.outcome === "string" ? payload.outcome : "cancelled",
+          );
+        }
         break;
       case "question/requested":
         if (sessionId) {
-          h.onQuestion(sessionId, Array.isArray(payload.questions) ? payload.questions.length : 1);
+          h.onQuestion(
+            sessionId,
+            Array.isArray(payload.questions)
+              ? (payload.questions as Array<{ id?: string; prompt?: string; options?: unknown }>)
+              : [],
+          );
         }
         break;
       case "session/projection":

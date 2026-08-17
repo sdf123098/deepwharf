@@ -4,6 +4,86 @@
 
 格式基于 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.1.0/)。
 
+## [0.5.0] - 2026-08-17
+
+### 新增 / New
+
+- **Codex 风格主窗口 + 侧边栏完全取代 Web UI 侧边栏**：
+  - 左侧全高会话侧边栏：顶部 = 品牌 logo + 折叠按钮（与标题栏合并，右侧保留原生
+    窗口控件拖拽条）；标题栏文字按钮全部改为图标
+  - 会话列表按工作区分组、实时刷新（标题 / 运行状态 / 相对时间），点击经伴生插件桥
+    在 Web UI 内切换会话；折叠后左缘有展开把手 + `Ctrl+Shift+S` 快捷键
+  - **Web UI 自带侧边栏彻底隐藏**：伴生插件注入带 `!important` 的样式规则（针对布局
+    容器稳定属性 `data-details-collapsed`），优先级高于 React 内联样式、不会被重渲染
+    顶回；详情面板打开时用间隔兜底继续隐藏
+  - **侧边栏功能迁移**（Web UI 侧边栏的增删改全部复刻）：
+    - 工作区：全部显示（含空工作区）、组头 ＋ 新建该工作区会话、⋯ 菜单重命名/删除
+    - 会话：行 ⋯ 菜单 重命名 / 复制(fork) / 归档；归档与空白会话不显示
+    - **工作区优先**：顶部「＋ 新会话」主按钮建在所选工作区（`session.create` 传
+      `workspaceId` 精确定位），无工作区时先引导创建；「＋ 工作区」为次要小按钮
+    - 底部图标+文字：插件商店 / 设置 / Web UI 设置（经伴生桥点击 `aria-haspopup`
+      触发器打开 harness 自带设置面板）
+- **完整远程 Agent 控制** — 主进程内置局域网 Web 控制台（设置 → 远程控制，默认关闭）：
+  - 令牌鉴权（Bearer），Harness 本体仍只监听 127.0.0.1；端口可自选（0 = 自动）
+  - 手机/其他设备浏览器可：查看/新建会话、发送提示词、中断任务、切换模型（官方
+    `session.models` / `session.selectModel`）、查看会话历史、查看用量摘要
+  - 工具调用**审批**（允许/拒绝，官方 `POST /api/respond`）、**问题**回答/取消（官方
+    question respond）；经 SSE 实时推送会话状态、审批、问题、投影事件
+- **合并设置页** — 外壳 / Harness / 插件 / **会话** / 用量 五个标签页（会话管理含
+  全文搜索与导出 ZIP，独立会话窗口移除）；四个功能共享 `settings-page.ts` 的 IPC
+  sender 授权，实时用量投影改推设置页；所有子窗口无边框化（共享 `chrome.js` 固定头部，
+  主进程统一处理 `window:close` / `window:minimize`）
+- **主题真正联动 Web UI** — 外壳主题切换直接驱动内嵌 Harness Web UI：
+  - 跟随系统 / 浅色 / 深色经官方 `settings.mutate` RPC 写入 `ui-theme` 偏好（服务端
+    持久化、客户端热生效）；内置附加主题（深海蓝 / 森林绿 / 暖沙 / 高对比）由
+    **deepwharf-companion 伴生插件**注册进 Web UI 主题注册表；主题插件的第三方主题
+    出现在外壳主题下拉，反向同步时外壳 chrome 自动派生配色
+  - 通信桥：webview guest 的 `window.parent` 指向自身，故挂沙箱 preload
+    （`resources/webui-preload.js`）用 `sendToHost` + `contextBridge` 中继，主进程对
+    所有桥 payload 白名单校验
+- **Web UI 用量文字条** — 伴生插件在输入框上方注册常驻文字行：`输入 X · 输出 Y ·
+  缓存命中 Z% · 上下文 P% (已用/窗口)`，官方 token-meter 投影实时刷新
+- **桌宠** — 透明置顶桌宠窗口（贝雷帽女仆）：待机漂浮、悬停靠近、单击 Q 弹 + 台词气泡、
+  双击开窗、右键菜单、拖拽（clientX/Y 增量 + 位置防抖持久化）、默认主窗口右下角、
+  **举牌显示用量**（可选）、任务完成跳跃/出错摇头；素材管线 `npm run pet [源图]`
+  （泛洪 + 光晕侵蚀 + 仅保留最大连通域）
+- **全局字体** — 设置新增「全局字体」（默认 HarmonyOS Sans SC，下拉选择：系统默认 /
+  HarmonyOS Sans SC / HarmonyOS Sans / 微软雅黑 / DengXian / Noto Sans CJK SC / Segoe UI /
+  system-ui，旧配置自动迁移；此前输入的任意自定义字体保留为独立选项），
+  外壳窗口与 Harness Web UI（`--dsw-font-family`）同步生效
+- 伴生插件自动安装进 `$DSH_HOME/profiles/web`（版本比对幂等，失败仅降级；变更在
+  下一次 Harness 启动时生效，绝不因安装而重启运行中的 Harness）
+
+### 修复 / Fixes
+
+- **Electron `window.prompt()` 静默失效** — 主窗口侧边栏新建工作区/重命名无反应；
+  改用自定义模态框（`promptDialog`）替换全部 prompt 调用
+- **沙箱 preload 不能 require 相对模块** — 共享 `preload-chrome` 导致商店/日志/引导
+  的 preload 整体加载失败（关闭按钮与业务 API 全丢）；改为在每个 preload 内联
+  chromeApi 暴露
+- **Web UI 侧边栏隐藏失效** — 内联样式置零会被 React 重渲染顶回；改注入 `!important`
+  样式规则（针对 `data-details-collapsed` 稳定属性）
+- **新建会话不在目标工作区** — 由传 cwd 改为传 `workspaceId` 精确关联
+- **侧边栏多出 Web UI 没有的会话** — 过滤空白与归档会话（`workspace.list` 的
+  `archivedSessionIds`）
+- **桌宠背后黑色阴影** — 用户抠图源自带半透明阴影块；改回从原始插画自动抠图
+- **新建工作区改调系统目录选择器** — 侧边栏「＋ 工作区」不再手输绝对路径：直接弹系统
+  文件夹选择器（`openDirectory + createDirectory`，含「新建文件夹」），选择器不可用时
+  回退手输；新建会话但无工作区时同样走选择器
+- **侧边栏运行耗时定格「0s」** — 任务运行中「运行中 · <耗时>」不再冻结：为运行中会话
+  注册轻量秒针，每秒就地刷新耗时文字（不重建 DOM），结束自动停止
+- **托盘桌宠菜单不同步 / 需点两次** — 右键桌宠隐藏后托盘标签立即同步为「显示桌宠」
+  （窗口显隐回调直连托盘）；托盘项从「翻转 petEnabled 设置」改为**直接切换桌宠窗口
+  显隐**，一次点击即显示；从设置页关闭桌宠后点托盘「显示桌宠」会先重新启用
+- 界面分割线清理（仅保留侧边栏自身的分隔）
+
+### 变更 / Changed
+
+- 标题栏按钮精简为 商店 / 设置 / Web UI 设置（图标，置于侧边栏底部）+ 侧边栏折叠
+- 侧边栏折叠状态持久化（localStorage）
+- 主题下拉动态构建：外壳自有主题 + Web UI 主题注册表枚举项分组展示
+- 版本号 0.5.0
+
 ## [0.4.0] - 2026-08-16
 
 ### 新增 / New

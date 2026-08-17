@@ -88,6 +88,7 @@ export function openOnboardingWindow(preloadPath: string): void {
     minWidth: 460,
     minHeight: 400,
     backgroundColor: themePayload().colors.bg,
+    frame: false, // frameless sub-window with chrome.js header
     title: "DeepWharf",
     resizable: true,
     webPreferences: {

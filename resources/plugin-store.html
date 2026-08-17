@@ -15,8 +15,13 @@
   * { box-sizing: border-box; }
   html, body { margin:0; height:100%; background:var(--bg); color:var(--text);
     font-family: system-ui, "Segoe UI", "Microsoft YaHei", sans-serif; font-size:14px; }
-  header { display:flex; align-items:center; gap:12px; padding:14px 18px;
-    border-bottom:1px solid var(--border); background:var(--panel); }
+  header { display:flex; align-items:center; gap:12px; padding:6px 8px 6px 16px;
+    background:var(--panel); -webkit-app-region: drag; user-select:none; }
+  header h1 { font-size:14px; margin:0; font-weight:600; flex:0 0 auto; }
+  .search { -webkit-app-region: no-drag; }
+  #storeClose { -webkit-app-region: no-drag; margin-left:6px; background:transparent; color:var(--muted); border:none;
+    width:28px; height:26px; border-radius:6px; font-size:13px; line-height:1; padding:0; }
+  #storeClose:hover { background:var(--border); color:var(--text); }
   header h1 { font-size:16px; margin:0; font-weight:600; flex:1; }
   .search { display:flex; gap:8px; flex:1; max-width:620px; }
   .search select { background:var(--bg); border:1px solid var(--border); color:var(--text);
@@ -73,6 +78,7 @@
       </svg>
     </button>
   </div>
+  <button id="storeClose" title="关闭">✕</button>
 </header>
 <main>
   <div class="direct">

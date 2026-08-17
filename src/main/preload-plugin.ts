@@ -1,4 +1,10 @@
 import { contextBridge, ipcRenderer } from "electron";
+// Sandboxed preloads cannot require() relative modules, so every preload
+// inlines this window-chrome exposure (frameless windows drive their own UI).
+contextBridge.exposeInMainWorld("chromeApi", {
+  close: () => ipcRenderer.send("window:close"),
+  minimize: () => ipcRenderer.send("window:minimize"),
+});
 
 contextBridge.exposeInMainWorld("pluginApi", {
   sources: () => ipcRenderer.invoke("plugin-store:sources"),

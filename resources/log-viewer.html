@@ -13,7 +13,7 @@
   html, body { margin:0; height:100%; background:var(--bg); color:var(--text);
     font-family: system-ui, "Segoe UI", "Microsoft YaHei", sans-serif; font-size:14px; }
   main { display:flex; flex-direction:column; height:100%; }
-  .top { display:flex; gap:8px; align-items:center; padding:10px 14px; border-bottom:1px solid var(--border); }
+  .top { display:flex; gap:8px; align-items:center; padding:10px 14px; }
   .tab { background:transparent; color:var(--muted); border:1px solid transparent; border-radius:6px;
     padding:5px 12px; font-size:13px; cursor:pointer; }
   .tab.active { background:var(--panel); color:var(--text); border-color:var(--border); }
@@ -28,7 +28,7 @@
   .rotated { color:#f0883e; font-size:11px; padding:2px 14px; }
 </style>
 </head>
-<body>
+<body data-chrome-min>
 <main>
   <div class="top">
     <button class="tab active" id="tabDesktop">desktop.log</button>
@@ -42,5 +42,6 @@
   <pre id="out"></pre>
 </main>
 <script src="log-viewer.js"></script>
+  <script src="chrome.js"></script>
 </body>
 </html>

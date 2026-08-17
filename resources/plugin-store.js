@@ -1,6 +1,13 @@
 // Plugin Store renderer. Talks to the main process through the preload bridge.
 "use strict";
 
+console.log("chromeApi:", typeof window.chromeApi !== "undefined" ? "ok" : "MISSING");
+const storeCloseBtn = document.getElementById("storeClose");
+if (storeCloseBtn) storeCloseBtn.addEventListener("click", () => {
+  if (window.chromeApi && window.chromeApi.close) window.chromeApi.close();
+  else { console.error("chromeApi missing — falling back to window.close()"); window.close(); }
+});
+
 const LANG = new URLSearchParams(location.search).get("lang") || "en-US";
 const I18N = {
   "zh-CN": {

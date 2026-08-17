@@ -14,6 +14,11 @@ const {
   cacheHitRate,
   contextPercent,
   formatTokens,
+  isShellThemeId,
+  parseWebuiSnapshot,
+  paletteFromWebui,
+  sanitizeWebuiPalette,
+  formatUsageSummary,
 } = require("../dist/main/pure.js");
 
 // --- semverGt ---------------------------------------------------------------
@@ -206,4 +211,133 @@ test("resolveTargetModules: derives resources/harness/node_modules", () => {
 
 test("resolveTargetModules: throws on an unexpected layout", () => {
   assert.throws(() => resolveTargetModules("C:/x/some/other/bin.js"));
+});
+
+// --- web UI theme bridge ------------------------------------------------------
+
+test("isShellThemeId: base ids and webui: ids", () => {
+  for (const id of ["auto", "light", "dark", "midnight", "forest", "warm", "contrast"]) {
+    assert.ok(isShellThemeId(id), id);
+  }
+  assert.ok(isShellThemeId("webui:solarized"));
+  assert.ok(!isShellThemeId("webui:"));
+  assert.ok(!isShellThemeId("webui:-bad"));
+  assert.ok(!isShellThemeId("banana"));
+  assert.ok(!isShellThemeId(""));
+});
+
+test("sanitizeSettingsPatch: accepts webui theme ids and pet fields", () => {
+  const out = sanitizeSettingsPatch({
+    theme: "webui:solarized",
+    petEnabled: true,
+    petSignEnabled: false,
+    petPos: { x: 100.4, y: -50.6 },
+    webuiLinked: true,
+  });
+  assert.deepEqual(out, {
+    theme: "webui:solarized",
+    petEnabled: true,
+    petSignEnabled: false,
+    petPos: { x: 100, y: -51 },
+    webuiLinked: true,
+  });
+  assert.deepEqual(sanitizeSettingsPatch({ petPos: { x: "a", y: 1 }, petEnabled: "yes" }), {});
+});
+
+test("parseWebuiSnapshot: accepts a well-formed snapshot", () => {
+  const snap = parseWebuiSnapshot({
+    preference: "webui:solarized",
+    activeId: "solarized",
+    colorScheme: "dark",
+    themes: [
+      { id: "light", label: "Light", colorScheme: "light", builtin: true },
+      { id: "dark", label: "Dark", colorScheme: "dark", builtin: true },
+      { id: "midnight", label: "Midnight", colorScheme: "dark" },
+      { id: "solarized", colorScheme: "dark" },
+      { id: "solarized", colorScheme: "dark" }, // duplicate dropped
+      { id: "system", colorScheme: "dark" }, // preference, not a theme
+    ],
+    tokens: {
+      bgBase: "#0d1117",
+      bgLayer1: " rgb(22, 27, 34) ",
+      borderL2: "#21262d",
+      labelPrimary: "#e6edf3",
+      labelSecondary: "#8b949e",
+      brandPrimary: "#4f8cff",
+      evil: "javascript:alert(1)", // unknown key dropped
+    },
+  });
+  assert.ok(snap);
+  assert.strictEqual(snap.preference, "webui:solarized");
+  assert.strictEqual(snap.activeId, "solarized");
+  assert.strictEqual(snap.themes.length, 4);
+  assert.strictEqual(snap.themes[1].builtin, true);
+  assert.strictEqual(snap.themes[3].label, "solarized"); // label falls back to id
+  assert.strictEqual(snap.tokens.bgLayer1, "rgb(22, 27, 34)"); // trimmed
+  assert.strictEqual(snap.tokens.evil, undefined);
+});
+
+test("parseWebuiSnapshot: rejects malformed payloads", () => {
+  assert.strictEqual(parseWebuiSnapshot(null), null);
+  assert.strictEqual(parseWebuiSnapshot("x"), null);
+  assert.strictEqual(parseWebuiSnapshot({ preference: "", activeId: "dark" }), null);
+  assert.strictEqual(parseWebuiSnapshot({ preference: "dark", activeId: "dark", themes: [] }), null);
+  assert.strictEqual(parseWebuiSnapshot({ preference: "dark", activeId: "dark", themes: "nope" }), null);
+  // oversized garbage in every field still yields a safe snapshot or null
+  const noisy = parseWebuiSnapshot({
+    preference: "x".repeat(500),
+    activeId: "dark",
+    themes: [{ id: "dark", colorScheme: "dark" }],
+    tokens: { bgBase: "#".repeat(500) },
+  });
+  assert.ok(noisy === null || (noisy.tokens.bgBase === undefined && noisy.preference.length <= 64));
+});
+
+test("paletteFromWebui: derives the shell palette from tokens", () => {
+  const palette = paletteFromWebui({
+    bgBase: "#0d1117",
+    bgLayer1: "#161b22",
+    borderL2: "#21262d",
+    labelPrimary: "#e6edf3",
+    labelSecondary: "#8b949e",
+    brandPrimary: "#4f8cff",
+  });
+  assert.deepEqual(palette, {
+    bg: "#0d1117",
+    panel: "#161b22",
+    border: "#21262d",
+    text: "#e6edf3",
+    muted: "#8b949e",
+    accent: "#4f8cff",
+  });
+  assert.strictEqual(paletteFromWebui({ bgBase: "#000" }), undefined); // missing keys
+});
+
+test("sanitizeWebuiPalette: round-trips good palettes, drops bad ones", () => {
+  const p = { bg: "#fff", panel: "#eee", border: "#ddd", text: "#111", muted: "#666", accent: "#00f" };
+  assert.deepEqual(sanitizeWebuiPalette(p), p);
+  assert.strictEqual(sanitizeWebuiPalette({ ...p, accent: "javascript:x" }), undefined);
+  assert.strictEqual(sanitizeWebuiPalette(null), undefined);
+});
+
+// --- usage summary (pet sign) --------------------------------------------------
+
+test("formatUsageSummary: compact zh/en lines with all metrics", () => {
+  const usage = { uncachedInputTokens: 2_300, outputTokens: 45_000, cacheReadTokens: 77_000, cacheWriteTokens: 700 };
+  const pressure = { projectedTokens: 84_000, contextWindow: 200_000 };
+  assert.strictEqual(
+    formatUsageSummary(usage, pressure, "zh-CN"),
+    "输入 80.0K · 输出 45.0K · 缓存 96.3% · 上下文 42.0%",
+  );
+  assert.strictEqual(
+    formatUsageSummary(usage, pressure, "en-US"),
+    "in 80.0K · out 45.0K · cache 96.3% · ctx 42.0%",
+  );
+});
+
+test("formatUsageSummary: partial data and empty states", () => {
+  const usage = { uncachedInputTokens: 900, outputTokens: 0, cacheReadTokens: 0, cacheWriteTokens: 0 };
+  assert.strictEqual(formatUsageSummary(usage, null, "zh-CN"), "输入 900 · 输出 0 · 缓存 0.0%");
+  assert.strictEqual(formatUsageSummary(null, null, "zh-CN"), "还没有用量");
+  assert.strictEqual(formatUsageSummary(null, null, "en-US"), "no usage yet");
 });

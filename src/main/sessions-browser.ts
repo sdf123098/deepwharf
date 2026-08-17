@@ -6,10 +6,8 @@
  */
 import { ipcMain, BrowserWindow, dialog } from "electron";
 import { writeFileSync } from "node:fs";
-import { join } from "node:path";
 import { localeForRenderer, t } from "./i18n";
-import { rememberedWindowBounds, trackWindowBounds } from "./window";
-import { themePayload, themeQuery } from "./theme";
+import { isSettingsPageSender, settingsPageSender } from "./settings-page";
 import { harnessRpc } from "./harness-settings";
 import { parseTokenUsage, type TokenUsage } from "./pure";
 
@@ -74,54 +72,27 @@ export function normalizeSessions(value: unknown): SessionRow[] {
   return rows;
 }
 
-// --- window + IPC ---------------------------------------------------------------
-
-let sessionsWindow: BrowserWindow | null = null;
-
-export function openSessionsWindow(preloadPath: string): void {
-  if (sessionsWindow && !sessionsWindow.isDestroyed()) {
-    sessionsWindow.focus();
-    return;
-  }
-  sessionsWindow = new BrowserWindow({
-    width: 780,
-    height: 620,
-    ...rememberedWindowBounds("sessions", { width: 640, height: 480 }),
-    minWidth: 640,
-    minHeight: 420,
-    backgroundColor: themePayload().colors.bg,
-    title: "Sessions",
-    webPreferences: {
-      preload: preloadPath,
-      nodeIntegration: false,
-      contextIsolation: true,
-      sandbox: true,
-    },
-  });
-  trackWindowBounds("sessions", sessionsWindow);
-  sessionsWindow.loadFile(join(__dirname, "../../resources/sessions.html"), {
-    query: { lang: localeForRenderer(), ...themeQuery() },
-  });
-  sessionsWindow.setMenu(null);
-  sessionsWindow.on("closed", () => {
-    sessionsWindow = null;
-  });
-}
+// --- IPC ------------------------------------------------------------------------
 
 function assertSessionsSender(event: Electron.IpcMainInvokeEvent): void {
-  if (!sessionsWindow || sessionsWindow.isDestroyed() || event.sender !== sessionsWindow.webContents) {
+  if (!isSettingsPageSender(event.sender)) {
     throw new Error("unauthorized IPC sender");
   }
 }
 
 /** Stream one session's export ZIP to a user-chosen file. */
-async function exportSession(win: BrowserWindow, port: number, sessionId: string): Promise<{ ok: boolean; cancelled?: boolean; error?: string; path?: string }> {
+async function exportSession(port: number, sessionId: string): Promise<{ ok: boolean; cancelled?: boolean; error?: string; path?: string }> {
   const short = sessionId.slice(0, 8);
-  const { canceled, filePath } = await dialog.showSaveDialog(win, {
+  const page = settingsPageSender();
+  const parent = page ? BrowserWindow.fromWebContents(page) : null;
+  const opts: Electron.SaveDialogOptions = {
     title: t("sessionsExportTitle"),
     defaultPath: `deepwharf-session-${short}.zip`,
     filters: [{ name: "ZIP", extensions: ["zip"] }],
-  });
+  };
+  const { canceled, filePath } = parent
+    ? await dialog.showSaveDialog(parent, opts)
+    : await dialog.showSaveDialog(opts);
   if (canceled || !filePath) return { ok: false, cancelled: true };
 
   const url =
@@ -172,9 +143,8 @@ export function registerSessionsIpc(getPort: () => number, log: (m: string) => v
   ipcMain.handle("sessions:export", async (e, sessionId: unknown) => {
     assertSessionsSender(e);
     if (typeof sessionId !== "string" || sessionId === "") return { ok: false, error: "invalid session" };
-    if (!sessionsWindow || sessionsWindow.isDestroyed()) return { ok: false, error: "no window" };
     try {
-      return await exportSession(sessionsWindow, getPort(), sessionId);
+      return await exportSession(getPort(), sessionId);
     } catch (err) {
       log(`session.export failed: ${String(err)}`);
       return { ok: false, error: err instanceof Error ? err.message : String(err) };

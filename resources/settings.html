@@ -6,60 +6,302 @@
 <script src="shell-theme.js"></script>
 <style>
   :root { --bg:#0d1117; --panel:#161b22; --border:#21262d; --text:#e6edf3; --muted:#8b949e;
-          --accent:#4f8cff; }
+          --accent:#4f8cff; --ok:#3fb950; --warn:#d29922; --danger:#f85149;
+          --hit:#3fb950; --miss:#d29922; --write:#58a6ff; --out:#bc8cff; }
   @media (prefers-color-scheme: light) {
     :root { --bg:#ffffff; --panel:#f6f8fa; --border:#d0d7de; --text:#1f2328; --muted:#57606a;
-            --accent:#0969da; }
+            --accent:#0969da; --ok:#1a7f37; --warn:#9a6700; --danger:#cf222e;
+            --hit:#1a7f37; --miss:#9a6700; --write:#0969da; --out:#8250df; }
   }
   * { box-sizing: border-box; }
+  /* the hidden attribute must win over author display rules (e.g. .row) */
+  [hidden] { display: none !important; }
   html, body { margin:0; height:100%; background:var(--bg); color:var(--text);
-    font-family: system-ui, "Segoe UI", "Microsoft YaHei", sans-serif; font-size:14px; }
-  main { padding: 18px 22px; overflow-y:auto; height:100%; }
-  h1 { font-size:16px; margin:0 0 16px; font-weight:600; }
+    font-family: var(--font-family, system-ui, "Segoe UI", "Microsoft YaHei", sans-serif); font-size:14px; }
+  body { display:flex; flex-direction:column; }
+
+  /* frameless chrome bar */
+  .chrome { flex:none; height:34px; display:flex; align-items:center; justify-content:space-between;
+    padding:0 8px 0 14px; background:var(--bg);
+    -webkit-app-region: drag; user-select:none; }
+  .chrome-title { font-size:12.5px; font-weight:600; color:var(--muted); }
+  .chrome-close { -webkit-app-region: no-drag; width:26px; height:26px; background:transparent;
+    color:var(--muted); border:none; border-radius:6px; font-size:14px; cursor:pointer; line-height:1; }
+  .chrome-close:hover { background:var(--panel); color:var(--text); }
+
+  /* main tab bar */
+  .tabs { flex:none; display:flex; gap:6px; padding:10px 14px 0; }
+  .tab { background:transparent; color:var(--muted); border:none; border-bottom:2px solid transparent;
+    padding:8px 14px; font-size:13.5px; cursor:pointer; font-family: inherit; }
+  .tab.active { color:var(--text); border-bottom-color: var(--accent); font-weight:600; }
+
+  .pane { display:none; flex:1; min-height:0; overflow-y:auto; padding:16px 18px; }
+  .pane.active { display:block; }
+
   h2 { font-size:13px; color:var(--muted); text-transform:uppercase; letter-spacing:.5px;
     margin:20px 0 10px; font-weight:600; }
+  h2:first-child { margin-top:0; }
   .row { display:flex; align-items:center; justify-content:space-between; gap:12px;
     background:var(--panel); border:1px solid var(--border); border-radius:8px;
     padding:11px 14px; margin-bottom:8px; }
   .row .label { font-size:13px; }
-  .row .sub { color:var(--muted); font-size:11px; }
-  select, button { background:var(--bg); color:var(--text); border:1px solid var(--border);
-    border-radius:6px; padding:6px 12px; font-size:13px; cursor:pointer; }
-  button.primary { background:var(--accent); border-color:var(--accent); color:#fff; }
+  .row .sub { color:var(--muted); font-size:11px; margin-top:2px; }
+  select, input, button { background:var(--bg); color:var(--text); border:1px solid var(--border);
+    border-radius:6px; padding:6px 10px; font-size:13px; font-family: inherit; }
+  select { cursor:pointer; }
+  input[type=number] { width:84px; text-align:right; }
   input[type=checkbox] { width:16px; height:16px; accent-color:var(--accent); }
+  button { cursor:pointer; }
+  button.primary { background:var(--accent); border-color:var(--accent); color:#fff; font-weight:600; }
+  button:disabled { opacity:.5; cursor:default; }
+  .inputgroup { display:flex; align-items:center; gap:6px; }
+  .inputgroup .unit { color:var(--muted); font-size:12px; }
+  .inputgroup button { padding:6px 8px; }
+  .hint { color:var(--muted); font-size:12px; margin:-4px 2px 10px; line-height:1.5; white-space:pre-line; }
+  .hint.warn { color:var(--danger); }
+  .actions { display:flex; justify-content:flex-end; margin:14px 0 4px; }
+  .errorbox { text-align:center; padding:48px 20px; }
+  .errorbox .msg { color:var(--muted); margin-bottom:16px; }
+  .row .status { font-size:12px; color:var(--muted); }
   .ver { font-family: ui-monospace, Consolas, monospace; color:var(--accent); }
   .footer { color:var(--muted); font-size:11px; margin-top:16px; }
+
+  /* plugin manager */
+  .ptabs { display:flex; gap:6px; margin-bottom:12px; }
+  .ptab { background:transparent; color:var(--muted); border:none; border-bottom:2px solid transparent;
+    padding:6px 12px; font-size:12.5px; cursor:pointer; }
+  .ptab.active { color:var(--text); border-bottom-color: var(--accent); font-weight:600; }
+  .toolbar { display:flex; align-items:center; gap:8px; margin-bottom:10px; }
+  .toolbar .grow { flex:1; }
+  button.act { background:var(--panel); color:var(--text); border:1px solid var(--border);
+    border-radius:6px; padding:5px 11px; font-size:12.5px; cursor:pointer; font-family: inherit; }
+  button.act.primary { background:var(--accent); border-color:var(--accent); color:#fff; }
+  button.act.danger { color:var(--danger); border-color:var(--danger); background:transparent; }
+  button.act:disabled { opacity:.45; cursor:default; }
+  .progress { background:var(--panel); border:1px solid var(--border); border-radius:8px;
+    padding:8px 12px; margin-bottom:10px; font-family: ui-monospace, Consolas, monospace;
+    font-size:11px; color:var(--muted); max-height:130px; overflow-y:auto; white-space:pre-wrap;
+    word-break:break-all; }
+  .row .body { flex:1; min-width:0; }
+  .row .t { font-size:13px; font-weight:600; display:flex; align-items:center; gap:8px; flex-wrap:wrap; }
+  .row .t code { font-family: ui-monospace, Consolas, monospace; color:var(--accent); }
+  .row .m { color:var(--muted); font-size:11.5px; margin-top:3px; white-space:nowrap;
+    overflow:hidden; text-overflow:ellipsis; font-family: ui-monospace, Consolas, monospace; }
+  .row .actions { display:flex; gap:6px; flex:none; }
+  .tag { font-size:10.5px; padding:2px 8px; border-radius:10px; white-space:nowrap; border:1px solid var(--border); color:var(--muted); }
+  .tag.ok { color:var(--ok); border-color:var(--ok); }
+  .tag.off { color:var(--warn); border-color:var(--warn); }
+  .empty { color:var(--muted); text-align:center; padding:36px 0; font-size:13px; line-height:1.8; }
+  .msg { font-size:12px; min-height:16px; padding:0 2px 8px; color:var(--muted); }
+  .msg.err { color:var(--danger); }
+  .footnote { color:var(--muted); font-size:10.5px; text-align:center; padding:6px 0 12px; line-height:1.6; }
+  form.add { background:var(--panel); border:1px dashed var(--border); border-radius:8px;
+    padding:12px 14px; margin-bottom:10px; display:grid; gap:8px; }
+  form.add .grid { display:grid; grid-template-columns: 1fr 1fr; gap:8px; }
+  form.add label { font-size:11px; color:var(--muted); display:flex; flex-direction:column; gap:4px; }
+  form.add input, form.add select, form.add textarea { background:var(--bg); color:var(--text);
+    border:1px solid var(--border); border-radius:6px; padding:6px 9px; font-size:12.5px;
+    font-family: inherit; outline:none; }
+  form.add input:focus, form.add textarea:focus { border-color: var(--accent); }
+  form.add textarea { font-family: ui-monospace, Consolas, monospace; min-height:52px; resize:vertical; }
+  form.add .full { grid-column: 1 / -1; }
+
+  /* sessions tab */
+  .badge { font-size:10.5px; border-radius:10px; padding:2px 8px; flex:none; }
+  .badge.running { background:rgba(63,185,80,.15); color:var(--ok); }
+  input[type=search] { background:var(--panel); }
+  #svList { display:flex; flex-direction:column; gap:8px; }
+  #svList .row { margin-bottom:0; }
+
+  /* usage */
+  .usage-top { display:flex; align-items:center; gap:10px; margin-bottom:12px; flex-wrap:wrap; }
+  .usage-top select { max-width:320px; }
+  .live { display:inline-flex; align-items:center; gap:6px; font-size:11px; color:var(--hit); }
+  .live i { width:7px; height:7px; border-radius:50%; background:var(--hit); animation: pulse 1.6s ease-in-out infinite; }
+  @keyframes pulse { 50% { opacity:.35; } }
+  .hero { display:flex; gap:16px; align-items:stretch; }
+  .ringcard { flex:0 0 200px; background:var(--panel); border:1px solid var(--border); border-radius:12px;
+    padding:16px; display:flex; flex-direction:column; align-items:center; justify-content:center; gap:4px; }
+  .ring { position:relative; width:132px; height:132px; }
+  .ring svg { transform: rotate(-90deg); }
+  .ring .track { stroke:var(--border); }
+  .ring .arc { stroke:var(--hit); transition: stroke-dashoffset .6s cubic-bezier(.22,1,.36,1), stroke .3s; }
+  .ring .val { position:absolute; inset:0; display:flex; flex-direction:column; align-items:center; justify-content:center; }
+  .ring .val b { font-size:26px; font-weight:650; font-variant-numeric: tabular-nums; letter-spacing:-.5px; }
+  .ring .val span { font-size:11px; color:var(--muted); }
+  .ringcard .sub { font-size:11px; color:var(--muted); }
+  .ctx { flex:1; background:var(--panel); border:1px solid var(--border); border-radius:12px;
+    padding:16px 18px; display:flex; flex-direction:column; gap:10px; justify-content:center; }
+  .ctx .label { font-size:12px; color:var(--muted); display:flex; justify-content:space-between; }
+  .ctx .label b { color:var(--text); font-weight:600; font-variant-numeric: tabular-nums; }
+  .bar { height:10px; border-radius:5px; background:var(--border); overflow:hidden; }
+  .bar > i { display:block; height:100%; border-radius:5px; background:var(--accent);
+    transition: width .6s cubic-bezier(.22,1,.36,1); }
+  .bar.warn > i { background: var(--miss); }
+  .ctx .legend { font-size:11px; color:var(--muted); }
+  .cards { display:grid; grid-template-columns:repeat(4, 1fr); gap:10px; margin-top:14px; }
+  .card { background:var(--panel); border:1px solid var(--border); border-radius:12px; padding:12px 14px; }
+  .card .k { font-size:11.5px; color:var(--muted); display:flex; align-items:center; gap:6px; }
+  .card .k i { width:8px; height:8px; border-radius:3px; display:inline-block; }
+  .card .v { font-size:21px; font-weight:650; margin-top:6px; font-variant-numeric: tabular-nums; letter-spacing:-.3px; }
+  .card .m { height:4px; border-radius:2px; background:var(--border); margin-top:8px; overflow:hidden; }
+  .card .m > i { display:block; height:100%; border-radius:2px; transition: width .6s cubic-bezier(.22,1,.36,1); }
+  .comp { margin-top:14px; background:var(--panel); border:1px solid var(--border); border-radius:12px; padding:14px 16px; }
+  .comp .label { font-size:12px; color:var(--muted); margin-bottom:10px; }
+  .stack { display:flex; height:14px; border-radius:7px; overflow:hidden; background:var(--border); }
+  .stack > i { display:block; height:100%; transition: width .6s cubic-bezier(.22,1,.36,1); }
+  .legend { display:flex; flex-wrap:wrap; gap:14px; margin-top:10px; font-size:11.5px; color:var(--muted); }
+  .legend em { font-style:normal; display:flex; align-items:center; gap:6px; }
+  .legend em i { width:8px; height:8px; border-radius:3px; }
+  .legend em b { color:var(--text); font-weight:600; font-variant-numeric: tabular-nums; }
 </style>
 </head>
 <body>
-<main>
-  <h1 id="title">外壳设置</h1>
+  <div class="chrome"><span class="chrome-title" id="chromeTitle">设置</span>
+    <button class="chrome-close" id="chromeClose" title="关闭">✕</button></div>
 
-  <h2 id="secAppearance">外观与行为</h2>
-  <div class="row"><div><div class="label" id="lblLang">界面语言</div></div>
-    <select id="language"><option value="auto">跟随系统</option><option value="zh-CN">中文</option><option value="en-US">English</option></select></div>
-  <div class="row"><div><div class="label" id="lblTheme">外观主题</div></div>
-    <select id="theme"></select></div>
-  <div class="row"><div class="label" id="lblAutoHarness">启动时检查 Harness 更新</div><input type="checkbox" id="autoCheckUpdates"></div>
-  <div class="row"><div class="label" id="lblAutoShell">启动时检查外壳更新</div><input type="checkbox" id="autoCheckShell"></div>
-  <div class="row"><div class="label" id="lblDevtools">启动时打开开发者工具</div><input type="checkbox" id="devtoolsOnStart"></div>
-  <div class="row"><div class="label" id="lblCloseToTray">关闭窗口时最小化到托盘（保持会话运行）</div><input type="checkbox" id="closeToTray"></div>
-  <div class="row"><div class="label" id="lblGlobalShortcut">全局快捷键显示窗口（Ctrl+Alt+D）</div><input type="checkbox" id="globalShortcutEnabled"></div>
-  <div class="row"><div class="label" id="lblAutoLaunch">开机自动启动</div><input type="checkbox" id="autoLaunch"></div>
-  <div class="row"><div class="label" id="lblNotifications">桌面通知（审批 / 提问 / 任务完成 / 出错）</div><input type="checkbox" id="notificationsEnabled"></div>
+  <div class="tabs">
+    <button class="tab active" id="tabShell">外壳</button>
+    <button class="tab" id="tabHarness">Harness</button>
+    <button class="tab" id="tabPlugins">插件</button>
+    <button class="tab" id="tabSessions">会话</button>
+    <button class="tab" id="tabUsage">用量</button>
+  </div>
 
-  <h2 id="secAbout">版本与更新</h2>
-  <div class="row"><div><div class="label" id="lblVerDesktop">外壳版本</div><div class="sub ver" id="verDesktop">-</div></div>
-    <button id="checkShell">检查更新</button></div>
-  <div class="row"><div><div class="label" id="lblVerHarness">Harness 版本</div><div class="sub ver" id="verHarness">-</div></div>
-    <button id="checkHarness">检查更新</button></div>
-  <div class="row"><div><div class="label" id="lblVerNode">Node 版本</div><div class="sub ver" id="verNode">-</div></div></div>
-  <div class="row"><div><div class="label" id="lblLogs">日志</div>
-    <div class="sub">desktop.log / harness.log（含运行上下文，自动轮转，单文件 ≤ 20MB）</div></div>
-    <div style="display:flex; gap:8px;"><button id="liveLogs">实时查看</button><button id="openLogs">打开日志目录</button><button id="clearLogs">清除日志</button></div></div>
+  <!-- 外壳设置 -->
+  <div class="pane active" id="paneShell">
+    <h2 id="secAppearance">外观与行为</h2>
+    <div class="row"><div><div class="label" id="lblLang">界面语言</div></div>
+      <select id="language"><option value="auto">跟随系统</option><option value="zh-CN">中文</option><option value="en-US">English</option></select></div>
+    <div class="row"><div><div class="label" id="lblTheme">外观主题</div></div>
+      <select id="theme"></select></div>
+    <div class="row"><div><div class="label" id="lblFont">全局字体</div>
+      <div class="sub" id="fontHint"></div></div>
+      <select id="fontFamily"></select></div>
+    <div class="row"><div class="label" id="lblAutoHarness">启动时检查 Harness 更新</div><input type="checkbox" id="autoCheckUpdates"></div>
+    <div class="row"><div class="label" id="lblAutoShell">启动时检查外壳更新</div><input type="checkbox" id="autoCheckShell"></div>
+    <div class="row"><div class="label" id="lblDevtools">启动时打开开发者工具</div><input type="checkbox" id="devtoolsOnStart"></div>
+    <div class="row"><div class="label" id="lblCloseToTray">关闭窗口时最小化到托盘（保持会话运行）</div><input type="checkbox" id="closeToTray"></div>
+    <div class="row"><div class="label" id="lblGlobalShortcut">全局快捷键显示窗口（Ctrl+Alt+D）</div><input type="checkbox" id="globalShortcutEnabled"></div>
+    <div class="row"><div class="label" id="lblAutoLaunch">开机自动启动</div><input type="checkbox" id="autoLaunch"></div>
+    <div class="row"><div class="label" id="lblNotifications">桌面通知（审批 / 提问 / 任务完成 / 出错）</div><input type="checkbox" id="notificationsEnabled"></div>
+    <div class="row"><div><div class="label" id="lblPet">桌面宠物</div>
+      <div class="sub" id="petHint"></div></div><input type="checkbox" id="petEnabled"></div>
+    <div class="row"><div class="label" id="lblPetSign">宠物举牌显示用量统计</div><input type="checkbox" id="petSignEnabled"></div>
 
-  <div class="footer" id="footer"></div>
-</main>
-<script src="settings.js"></script>
+    <h2 id="secRemote">远程控制</h2>
+    <div class="row"><div><div class="label" id="lblRemote">启用远程控制（局域网 Web 控制台）</div>
+      <div class="sub" id="remoteHint"></div></div><input type="checkbox" id="remoteEnabled"></div>
+    <div class="row" id="remotePortRow" hidden><div><div class="label" id="lblRemotePort">监听端口</div>
+      <div class="sub" id="remotePortHint"></div></div>
+      <input type="number" id="remotePort" min="1" max="65535" placeholder="自动"></div>
+    <div class="row" id="remoteTokenRow" hidden><div><div class="label" id="lblRemoteToken">访问令牌</div>
+      <div class="sub ver" id="remoteToken">-</div></div>
+      <button id="remoteRegen"></button></div>
+    <div class="row" id="remoteUrlRow" hidden><div><div class="label" id="lblRemoteUrl">控制台地址</div>
+      <div class="sub ver" id="remoteUrl">-</div></div></div>
+
+    <h2 id="secAbout">版本与更新</h2>
+    <div class="row"><div><div class="label" id="lblVerDesktop">外壳版本</div><div class="sub ver" id="verDesktop">-</div></div>
+      <button id="checkShell">检查更新</button></div>
+    <div class="row"><div><div class="label" id="lblVerHarness">Harness 版本</div><div class="sub ver" id="verHarness">-</div></div>
+      <button id="checkHarness">检查更新</button></div>
+    <div class="row"><div><div class="label" id="lblVerNode">Node 版本</div><div class="sub ver" id="verNode">-</div></div></div>
+    <div class="row"><div><div class="label" id="lblLogs">日志</div>
+      <div class="sub">desktop.log / harness.log（含运行上下文，自动轮转，单文件 ≤ 20MB）</div></div>
+      <div style="display:flex; gap:8px;"><button id="liveLogs">实时查看</button><button id="openLogs">打开日志目录</button><button id="clearLogs">清除日志</button></div></div>
+
+    <div class="footer" id="shellFooter"></div>
+  </div>
+
+  <!-- Harness 设置 -->
+  <div class="pane" id="paneHarness">
+    <div id="harnessError" class="errorbox" hidden>
+      <div class="msg" id="harnessErrorText">无法读取 Harness 设置</div>
+      <button id="harnessRetry" class="primary">重试</button>
+    </div>
+    <div id="harnessContent" hidden>
+      <h2 id="secModel">模型请求</h2>
+      <div class="row"><div><div class="label" id="lblProvider">提供方</div></div>
+        <select id="provider"></select></div>
+      <div class="row"><div><div class="label" id="lblRetry">请求失败重试</div></div>
+        <select id="retry">
+          <option value="harness-default">Harness 默认</option>
+          <option value="recommended">推荐</option>
+          <option value="unstable">网络不稳定</option>
+          <option value="always">持续重试</option>
+          <option value="custom" disabled>自定义</option>
+        </select></div>
+      <div class="hint" id="retryDetail"></div>
+
+      <div class="row" id="rowTimeoutMs" hidden><div><div class="label" id="lblTimeout">请求超时</div>
+        <div class="sub" id="subTimeout">模型请求超过该时长未返回即判定失败。</div></div>
+        <div class="inputgroup"><input type="number" id="timeoutMs" min="1" placeholder="—">
+          <span class="unit">秒</span><button id="resetTimeoutMs">恢复默认</button></div></div>
+
+      <div class="row" id="rowStreamIdle" hidden><div><div class="label" id="lblStreamIdle">流式响应空闲超时</div>
+        <div class="sub" id="subStreamIdle">模型已建立连接但长时间没有新的流式数据时，等待多久后判定请求失效。</div></div>
+        <div class="inputgroup"><input type="number" id="streamIdle" min="1" placeholder="—">
+          <span class="unit">秒</span><button id="resetStreamIdle">恢复默认</button></div></div>
+
+      <div class="row" id="rowWs" hidden><div><div class="label" id="lblWs">WebSocket 连接超时</div>
+        <div class="sub" id="subWs">与提供方的 WebSocket 连接建立超时时间。</div></div>
+        <div class="inputgroup"><input type="number" id="ws" min="1" placeholder="—">
+          <span class="unit">秒</span><button id="resetWs">恢复默认</button></div></div>
+
+      <div class="hint" id="appliesHint"></div>
+      <div class="actions"><button id="apply" class="primary" disabled>应用修改</button></div>
+
+      <h2 id="secAdvanced">高级</h2>
+      <div class="row"><div><div class="label" id="lblStatus">Harness 当前状态</div><div class="sub status" id="status">运行中</div></div>
+        <button id="restart">重启 Harness</button></div>
+    </div>
+  </div>
+
+  <!-- 插件管理 -->
+  <div class="pane" id="panePlugins">
+    <div class="ptabs">
+      <button class="ptab active" id="pmTabPlugins">插件</button>
+      <button class="ptab" id="pmTabMcp">MCP 服务器</button>
+      <button class="ptab" id="pmTabSkills">技能</button>
+    </div>
+    <div class="toolbar">
+      <button class="act" id="pmRefresh">刷新</button>
+      <button class="act" id="pmRestart" style="display:none">重启 Harness 生效</button>
+      <div class="grow"></div>
+    </div>
+    <div class="msg" id="msg"></div>
+    <div class="progress" id="progress" hidden></div>
+    <div id="pmPanePlugins"></div>
+    <div id="pmPaneMcp" style="display:none"></div>
+    <div id="pmPaneSkills" style="display:none"></div>
+    <div class="footnote" id="pmFootnote"></div>
+  </div>
+
+  <!-- 会话管理 -->
+  <div class="pane" id="paneSessions">
+    <div class="usage-top">
+      <input type="search" id="svQ" placeholder="" style="flex:1; min-width:180px;">
+      <button id="svRefresh"></button>
+    </div>
+    <label class="toggle" style="display:flex; align-items:center; gap:6px; font-size:12px; color:var(--muted); margin-bottom:10px;">
+      <input type="checkbox" id="svShowBlank"><span id="svLblBlank"></span></label>
+    <div id="svList"></div>
+    <div class="msg" id="svMsg"></div>
+    <div class="footnote" id="svFooter"></div>
+  </div>
+
+  <!-- 用量 -->
+  <div class="pane" id="paneUsage">
+    <div class="usage-top">
+      <span class="live" id="live" style="display:none"><i></i><span id="liveText"></span></span>
+      <select id="session"></select>
+      <button id="usageRefresh"></button>
+    </div>
+    <div id="usageBody"></div>
+    <div class="footnote" id="usageFootnote"></div>
+  </div>
+
+  <script src="settings.js"></script>
 </body>
 </html>

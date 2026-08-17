@@ -331,6 +331,11 @@ export function listInstalled(ctx: PluginStoreContext): string[] {
 
 let storeWindow: BrowserWindow | null = null;
 
+let storeLogSink: (m: string) => void = () => {};
+export function setStoreLogSink(fn: (m: string) => void): void {
+  storeLogSink = fn;
+}
+
 export function openPluginStore(preloadPath: string, locale: string): void {
   if (storeWindow && !storeWindow.isDestroyed()) {
     storeWindow.focus();
@@ -343,6 +348,7 @@ export function openPluginStore(preloadPath: string, locale: string): void {
     minWidth: 700,
     minHeight: 480,
     backgroundColor: themePayload().colors.bg,
+    frame: false, // frameless sub-window with chrome.js header
     title: "Plugin Store",
     webPreferences: {
       preload: preloadPath,
@@ -352,6 +358,9 @@ export function openPluginStore(preloadPath: string, locale: string): void {
     },
   });
   trackWindowBounds("store", storeWindow);
+  storeWindow.webContents.on("console-message", (_e, level, message) => {
+    if (level >= 1) storeLogSink(`store renderer: ${message}`);
+  });
   // Registry metadata (repository/homepage) is not a trusted navigation target:
   // deny everything and only open https: links in the system browser.
   storeWindow.webContents.setWindowOpenHandler(({ url }) => {

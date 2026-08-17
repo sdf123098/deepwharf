@@ -102,6 +102,7 @@ export function openLogViewerWindow(preloadPath: string, ctx: LogViewerContext):
     minWidth: 560,
     minHeight: 360,
     backgroundColor: themePayload().colors.bg,
+    frame: false, // frameless sub-window with chrome.js header
     title: "Logs",
     webPreferences: {
       preload: preloadPath,

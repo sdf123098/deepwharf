@@ -12,53 +12,21 @@ import { rememberedWindowBounds, trackWindowBounds } from "./window";
 import { themePayload, themeQuery } from "./theme";
 import { harnessRpc } from "./harness-settings";
 import { normalizeSessions, type SessionRow } from "./sessions-browser";
+import { isSettingsPageSender, settingsPageSender } from "./settings-page";
 
-let usageWindow: BrowserWindow | null = null;
 let watchedSession: string | null = null;
 
-export function openUsageWindow(preloadPath: string): void {
-  if (usageWindow && !usageWindow.isDestroyed()) {
-    usageWindow.focus();
-    return;
-  }
-  usageWindow = new BrowserWindow({
-    width: 720,
-    height: 560,
-    ...rememberedWindowBounds("usage", { width: 560, height: 460 }),
-    minWidth: 560,
-    minHeight: 440,
-    backgroundColor: themePayload().colors.bg,
-    title: "Usage",
-    webPreferences: {
-      preload: preloadPath,
-      nodeIntegration: false,
-      contextIsolation: true,
-      sandbox: true,
-    },
-  });
-  trackWindowBounds("usage", usageWindow);
-  usageWindow.loadFile(join(__dirname, "../../resources/usage.html"), {
-    query: { lang: localeForRenderer(), ...themeQuery() },
-  });
-  usageWindow.setMenu(null);
-  usageWindow.on("closed", () => {
-    usageWindow = null;
-    watchedSession = null;
-  });
-}
-
 function assertUsageSender(event: Electron.IpcMainInvokeEvent): void {
-  if (!usageWindow || usageWindow.isDestroyed() || event.sender !== usageWindow.webContents) {
+  if (!isSettingsPageSender(event.sender)) {
     throw new Error("unauthorized IPC sender");
   }
 }
 
 /** Forward a live projection frame; only the watched session reaches the UI. */
 export function notifyUsageProjection(sessionId: string, key: string, value: unknown): void {
-  if (!usageWindow || usageWindow.isDestroyed()) return;
-  if (watchedSession === null || sessionId !== watchedSession) return;
   if (key !== "tokenUsage" && key !== "contextPressure") return;
-  usageWindow.webContents.send("usage:update", { sessionId, key, value });
+  if (watchedSession !== null && sessionId !== watchedSession) return;
+  settingsPageSender()?.send("usage:update", { sessionId, key, value });
 }
 
 export function registerUsageIpc(getPort: () => number, log: (m: string) => void): void {

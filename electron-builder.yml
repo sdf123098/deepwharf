@@ -25,19 +25,22 @@ files:
   - resources/plugin-store.js
   - resources/settings.html
   - resources/settings.js
-  - resources/harness-settings.html
-  - resources/harness-settings.js
   - resources/onboarding.html
   - resources/onboarding.js
-  - resources/sessions.html
-  - resources/sessions.js
   - resources/log-viewer.html
   - resources/log-viewer.js
   - resources/shell-theme.js
-  - resources/usage.html
-  - resources/usage.js
-  - resources/plugin-manager.html
-  - resources/plugin-manager.js
+  - resources/pet.html
+  - resources/pet.js
+  - resources/webui-preload.js
+  - resources/chrome.js
+  - resources/remote.html
+  - resources/remote.js
+  - resources/remote.css
+  # Desktop pet cutout + the companion dsh plugin (installed into DSH_HOME at
+  # runtime; bundled inside the ASAR — Electron's patched fs reads it fine).
+  - resources/pet/pet.png
+  - resources/companion/**/*
 
 # Phase 4/5: embedded Node runtime goes outside the ASAR.
 # The Harness ships as ONE archive (harness.zip) so the installer copies a few

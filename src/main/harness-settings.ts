@@ -10,6 +10,7 @@ import { randomUUID } from "node:crypto";
 import { join } from "node:path";
 import { localeForRenderer } from "./i18n";
 import { rememberedWindowBounds, trackWindowBounds } from "./window";
+import { isSettingsPageSender } from "./settings-page";
 import {
   buildMutateOps,
   describeToView,
@@ -145,46 +146,10 @@ export async function applyProviderChanges(port: number, input: ApplyInput): Pro
   }
 }
 
-// --- window + IPC ---------------------------------------------------------------
-
-let harnessSettingsWindow: BrowserWindow | null = null;
-
-export function openHarnessSettingsWindow(preloadPath: string, locale: string): void {
-  if (harnessSettingsWindow && !harnessSettingsWindow.isDestroyed()) {
-    harnessSettingsWindow.focus();
-    return;
-  }
-  harnessSettingsWindow = new BrowserWindow({
-    width: 640,
-    height: 660,
-    ...rememberedWindowBounds("harnessSettings", { width: 560, height: 520 }),
-    minWidth: 560,
-    minHeight: 520,
-    backgroundColor: "#0d1117",
-    title: "Harness Settings",
-    webPreferences: {
-      preload: preloadPath,
-      nodeIntegration: false,
-      contextIsolation: true,
-      sandbox: true,
-    },
-  });
-  trackWindowBounds("harnessSettings", harnessSettingsWindow);
-  harnessSettingsWindow.loadFile(join(__dirname, "../../resources/harness-settings.html"), {
-    query: { lang: locale },
-  });
-  harnessSettingsWindow.setMenu(null); // no redundant menu bar
-  harnessSettingsWindow.on("closed", () => {
-    harnessSettingsWindow = null;
-  });
-}
+// --- IPC ------------------------------------------------------------------------
 
 function assertHarnessSettingsSender(event: Electron.IpcMainInvokeEvent): void {
-  if (
-    !harnessSettingsWindow ||
-    harnessSettingsWindow.isDestroyed() ||
-    event.sender !== harnessSettingsWindow.webContents
-  ) {
+  if (!isSettingsPageSender(event.sender)) {
     throw new Error("unauthorized IPC sender");
   }
 }

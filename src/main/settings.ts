@@ -12,11 +12,21 @@ const DEFAULTS: DesktopSettings = {
   lastShellCheck: 0,
   language: "auto",
   theme: "auto",
+  fontFamily: "HarmonyOS Sans SC",
   devtoolsOnStart: false,
+  petEnabled: true,
+  petSignEnabled: true,
+  petPos: undefined,
+  webuiThemes: [],
+  webuiPalette: undefined,
+  webuiLinked: false,
   closeToTray: true,
   globalShortcutEnabled: true,
   autoLaunch: false,
   notificationsEnabled: true,
+  remoteEnabled: false,
+  remotePort: 0,
+  remoteToken: "",
   onboardingDismissed: false,
   windowBounds: {},
 };
@@ -27,7 +37,11 @@ export function settingsPath(): string {
 
 export function readSettings(): DesktopSettings {
   try {
-    return { ...DEFAULTS, ...JSON.parse(readFileSync(settingsPath(), "utf8")) };
+    const s = { ...DEFAULTS, ...JSON.parse(readFileSync(settingsPath(), "utf8")) };
+    // The font default was renamed to the SC variant; configs saved before
+    // that still carry the old family name.
+    if (s.fontFamily === "HarmonyOS Sans") s.fontFamily = "HarmonyOS Sans SC";
+    return s;
   } catch {
     return { ...DEFAULTS };
   }

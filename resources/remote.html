@@ -1,0 +1,75 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>DeepWharf Remote</title>
+<link rel="stylesheet" href="/remote.css">
+</head>
+<body>
+<header>
+  <span class="logo">🐋</span>
+  <h1>DeepWharf Remote</h1>
+  <span id="status" class="dot"></span>
+</header>
+
+<main>
+  <section id="gate" class="card" hidden>
+    <h2>访问令牌</h2>
+    <p class="hint">在 DeepWharf 设置 → 远程控制 中查看或重新生成令牌。</p>
+    <div class="rowline">
+      <input id="token" type="password" placeholder="粘贴访问令牌" autocomplete="off">
+      <button id="gateBtn" class="primary">连接</button>
+    </div>
+    <p id="gateErr" class="err" hidden></p>
+  </section>
+
+  <section id="dash" hidden>
+    <div class="cols">
+      <div class="col">
+        <div class="card">
+          <div class="cardhead"><h2>审批</h2><span id="approvalCount" class="pill"></span></div>
+          <div id="approvals" class="list"><div class="empty">暂无待审批</div></div>
+        </div>
+        <div class="card">
+          <div class="cardhead"><h2>问题</h2><span id="questionCount" class="pill"></span></div>
+          <div id="questions" class="list"><div class="empty">暂无待回答问题</div></div>
+        </div>
+        <div class="card">
+          <div class="cardhead"><h2>用量</h2></div>
+          <div id="usage" class="usage"><div class="empty">—</div></div>
+        </div>
+      </div>
+      <div class="col">
+        <div class="card">
+          <div class="cardhead">
+            <h2>会话</h2>
+            <div class="rowline tight">
+              <button id="newSession">＋ 新建</button>
+              <button id="refreshSessions">刷新</button>
+            </div>
+          </div>
+          <div id="sessions" class="list"><div class="empty">加载中…</div></div>
+        </div>
+        <div class="card" id="detailCard" hidden>
+          <div class="cardhead">
+            <h2 id="detailTitle">会话</h2>
+            <div class="rowline tight">
+              <button id="btnCancel" class="danger">中断</button>
+              <button id="btnModel">模型</button>
+              <button id="btnCloseDetail">关闭</button>
+            </div>
+          </div>
+          <div id="history" class="history"></div>
+          <form id="promptForm" class="rowline">
+            <input id="prompt" placeholder="输入提示词，Enter 发送" autocomplete="off">
+            <button class="primary" type="submit">发送</button>
+          </form>
+        </div>
+      </div>
+    </div>
+  </section>
+</main>
+<script src="/remote.js"></script>
+</body>
+</html>

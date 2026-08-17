@@ -158,15 +158,15 @@ export function createMainWindow(port: number, lang: string): BrowserWindow {
   return win;
 }
 
-export function createSettingsWindow(preloadPath: string, lang: string): BrowserWindow {
+export function createSettingsWindow(preloadPath: string, lang: string, tab = "shell"): BrowserWindow {
   const win = new BrowserWindow({
-    width: 640,
-    height: 740,
-    ...rememberedWindowBounds("settings", { width: 520, height: 480 }),
-    minWidth: 520,
-    minHeight: 480,
+    width: 780,
+    height: 700,
+    ...rememberedWindowBounds("settings", { width: 640, height: 520 }),
+    minWidth: 640,
+    minHeight: 520,
+    frame: false, // merged settings page draws its own title bar
     backgroundColor: themePayload().colors.bg,
-    title: "Settings",
     webPreferences: {
       preload: preloadPath,
       nodeIntegration: false,
@@ -177,7 +177,7 @@ export function createSettingsWindow(preloadPath: string, lang: string): Browser
   trackWindowBounds("settings", win);
   win.setMenu(null); // no redundant menu bar
   win.loadFile(join(__dirname, "../../resources/settings.html"), {
-    query: { lang, ...themeQuery() },
+    query: { lang, tab, ...themeQuery() },
   });
   return win;
 }
