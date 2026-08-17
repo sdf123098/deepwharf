@@ -1,6 +1,20 @@
-# DeepWharf
+<p align="center">
+  <img src="resources/brand-logo.png" width="120" alt="DeepWharf logo">
+</p>
 
-**[中文](./README.zh-CN.md) | English**
+<h1 align="center">DeepWharf</h1>
+
+<p align="center">
+  <strong><a href="./README.zh-CN.md">中文</a> | English</strong>
+</p>
+
+<p align="center">
+  <img src="resources/pet/pet.png" width="250" alt="Whale-girl desktop companion">
+</p>
+
+<p align="center">
+  <em>DeepWharf ships with a whale-girl who lives on your desktop — and keeps an eye on your token usage.</em>
+</p>
 
 > A desktop home for [DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness) (`dsh`).
 > Double-click an installer and get the full Harness agent experience as a native Windows app —
@@ -17,27 +31,39 @@ DeepWharf (Electron)
             └─ BrowserWindow (webview) → http://127.0.0.1:<port>
 ```
 
+## Meet the whale-girl 🐋
+
+The app icon is a little whale on a deep-blue disc, and the desktop pet is her personified form —
+a beret-wearing maid whale-girl surrounded by her baby-whale friends.
+
+- **Always-on-top, transparent** — she floats at the corner of your main window and stays on top of everything.
+- **Alive** — idle floating, leans in when you hover, bounces with a speech bubble when you click.
+- **Interactive** — double-click opens the main window; right-click for a menu; drag her anywhere (position is remembered).
+- **Holds a live usage sign** — an optional placard showing input / output / cache-hit % / context % from the official token-meter projections.
+- **Reacts to your work** — jumps for joy when a task finishes, shakes when the agent errors.
+- **Make her yours** — regenerate the cutout from any artwork with `npm run pet <png>` (flood-fill + halo erosion + largest connected component).
+
 ## Features
 
 - **Zero-dependency install** — bundled Node.js runtime + vendored Harness; works offline.
 - **Native desktop shell** — single merged title bar (logo + Plugin Store + Settings), themable
   (follows system light/dark), localized (简体中文 / English).
+- **Codex-style main window** — a full-height session sidebar that fully replaces the web
+  UI's own sidebar (hidden via an `!important` stylesheet rule): workspace-first session
+  management (create/rename/delete workspaces, rename/duplicate/archive conversations),
+  click-to-switch, icon+text actions, and a collapsed-rail expand handle (Ctrl+Shift+S).
+  New workspaces are picked through the native folder dialog — no typing paths.
+- **Remote control (LAN)** — an opt-in, token-authenticated web console: view/create
+  sessions, send prompts, interrupt runs, switch models, approve tool calls, answer
+  questions, and stream live events from any device on your network.
 - **Theme sync to the web UI** — shell themes drive the embedded Harness UI through the
   official `ui-theme` settings RPC; the bundled `deepwharf-companion` plugin registers the
   extra palettes (Midnight / Forest / Warm / Contrast) inside the web UI and bridges every
   theme plugin's themes into the shell picker — change the theme on either side and both follow.
 - **Usage, in text** — the companion adds a live usage line above the composer
   (input / output / cache hit / context occupancy) from the official token-meter projections.
-- **Codex-style main window** — a full-height session sidebar that fully replaces the web
-  UI's own sidebar (hidden via an !important stylesheet rule): workspace-first session
-  management (create/rename/delete workspaces, rename/duplicate/archive conversations),
-  click-to-switch, icon+text actions, and a collapsed-rail expand handle (Ctrl+Shift+S).
-- **Remote control (LAN)** — an opt-in, token-authenticated web console: view/create
-  sessions, send prompts, interrupt runs, switch models, approve tool calls, answer
-  questions, and stream live events from any device on your network.
-- **Desktop pet** — an interactive, always-on-top mascot (drag, click reactions, speech
-  bubbles); it can hold a live usage sign. Regenerate the cutout from any artwork with
-  `npm run pet <png>`.
+- **Global font** — pick from presets (default HarmonyOS Sans SC) or keep a custom family;
+  the shell and the embedded web UI follow.
 - **Plugin Store** — browse the `dsh-plugin` ecosystem (npm registry) and install via the official
   `dsh plugin` mechanism (bundled pnpm).
 - **Desktop integration** — closing the window minimizes to the system tray (Harness sessions keep
@@ -48,7 +74,7 @@ DeepWharf (Electron)
   store (effective immediately).
 - **Session history** — a dedicated window to browse all sessions, full-text search them, and
   export any one as a ZIP (with subagent logs and media attachments).
-- **Shell Settings** — language, theme, auto-update toggles, version info, logs.
+- **Shell Settings** — language, theme, font, auto-update toggles, version info, logs.
 - **Harness auto-update** — checks the registry and swaps `resources/harness` atomically.
 - **Clean lifecycle** — single instance, port auto-pick, HTTP ready-probe, process-tree cleanup on exit.
 - **Safe** — `contextIsolation` + sandbox; user data lives in `%APPDATA%`, never in the install dir.
